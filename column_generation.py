@@ -21,7 +21,11 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
     # Iterate until optimality is reached
     while True:
         master_problem.solve()
-        duals = master_problem.retain_duals()
+        try:
+            duals = master_problem.retain_duals()
+        except:
+            print(forbidden_edges)
+            print(compelled_edges)
         subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit,
                                 duals, service_times, forbidden_edges, compelled_edges)
         ordered_route, reduced_cost = subproblem.solve()
@@ -30,14 +34,15 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
         # Check if the candidate column is optimal
         if reduced_cost < 0 and last_added != ordered_route:
             # Add the column to the master problem
-            master_problem.add_columns([route], [cost], [ordered_route],forbidden_edges,compelled_edges)
+            master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
             last_added = ordered_route
         else:
             # Optimality has been reached
             break
 
-    # Extract the final solution from the master problem
-    return master_problem.extract_solution()
+    sol, obj = master_problem.extract_solution()
+    routes, costs, orders = master_problem.extract_columns()
+    return sol, obj, routes, costs, orders
 
 
 def initialize_columns(num_customers, time_matrix):
@@ -74,27 +79,56 @@ class MasterProblem:
         self.model.setParam('OutputFlag', False)
         self.y = {}
         self.routes = {}
+        self.costs = {}
+        self.orders = {}
         self.route_count = 0
         self.add_columns(initial_routes, costs, ordered_routes, forbidden_edges, compelled_edges)
 
     def add_columns(self, routes, costs, ordered_routes, forbidden_edges, compelled_edges):
-        ####CONSIDER FORBIDDEN AND COMPELLED EDGES
         constrs = self.model.getConstrs()
 
         if len(constrs) == 0:
+            to_be_imposed = {}
+            for edge in compelled_edges:
+                to_be_imposed[tuple(edge)] = []
+
             for index, route in enumerate(routes):
                 var_ub = 1
+                ordered_route = ordered_routes[index]
+                self.routes[index] = route
+                self.costs[index] = costs[index]
+                self.orders[index] = ordered_route
+                for index2 in range(len(ordered_route) - 1):
+                    edge = [ordered_route[index2], ordered_route[index2 + 1]]
+                    if edge in forbidden_edges:
+                        var_ub = 0
+                    elif edge in compelled_edges:
+                        to_be_imposed[tuple(edge)].append(index)
                 self.y[index] = self.model.addVar(ub=var_ub, obj=costs[index])
-                self.routes[index] = ordered_routes[index]
+
             self.model.addConstrs(gb.quicksum(routes[r][i] * self.y[r] for r in range(len(routes))) >= 1
                                   for i in range(self.num_customers))
-
+            self.model.addConstrs(gb.quicksum(self.y[t] for t in to_be_imposed[tuple(compelled_edges[k])]) >= 1
+                                  for k in range(len(compelled_edges)))
         else:
             for index, route in enumerate(routes):
                 var_ub = 1
+                column_contin = np.array([0] * len(compelled_edges))
+                ordered_route = ordered_routes[index]
+                self.routes[self.route_count + index] = route
+                self.costs[self.route_count + index] = costs[index]
+                self.orders[self.route_count + index] = ordered_route
+                for index2 in range(len(ordered_route) - 1):
+                    edge = [ordered_route[index2], ordered_route[index2 + 1]]
+                    if edge in forbidden_edges:
+                        var_ub = 0
+                    elif edge in compelled_edges:
+                        index3 = compelled_edges.index(edge)
+                        column_contin[index3] = 1
                 self.y[self.route_count + index] = self.model.addVar(ub=var_ub, obj=costs[index],
-                                                                     column=gb.Column(route, constrs))
-                self.routes[self.route_count + index] = ordered_routes[index]
+                                                                     column=gb.Column(
+                                                                         np.concatenate((route, column_contin)),
+                                                                         constrs))
 
         self.route_count += len(routes)
         self.model.update()
@@ -108,7 +142,13 @@ class MasterProblem:
 
     def extract_solution(self):
 
-        return [(key, self.y[key].x, self.routes[key]) for key in self.y if self.y[key].x > 0], self.model.objval
+        return [(key, self.y[key].x, self.orders[key]) for key in self.y if self.y[key].x > 0], self.model.objval
+
+    def extract_columns(self):
+        routes = [self.routes[x] for x in self.routes]
+        costs = [self.costs[x] for x in self.costs]
+        orders = [self.orders[x] for x in self.orders]
+        return routes, costs, orders
 
 
 class Subproblem:
@@ -124,7 +164,6 @@ class Subproblem:
         self.service_times = service_times
         self.price = np.zeros((num_customers + 1, num_customers + 1))
 
-        ####CONSIDER FORBIDDEN AND COMPELLED EDGES
         for i in range(num_customers + 1):
             for j in range(num_customers + 1):
                 if i != j:
@@ -132,6 +171,12 @@ class Subproblem:
                         self.price[i, j] = time_matrix[i, j] - duals[i - 1]
                     else:
                         self.price[i, j] = time_matrix[i, j]
+
+                    edge = [i, j]
+                    if edge in forbidden_edges:
+                        self.price[i, j] = math.inf
+                    elif edge in compelled_edges:
+                        self.price[i, j] = -100000
 
     def dynamic_program(self, start_point, current_label, unvisited_customers, remaining_time, remaining_capacity,
                         current_time, current_price):
@@ -206,7 +251,7 @@ def main():
     initial_routes = []
     initial_costs = []
     initial_orders = []
-    sol, obj = solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, time_windows, time_limit,
+    sol, obj,routes,costs, orders = solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, time_windows, time_limit,
                                                    num_customers, service_times, forbidden_edges, compelled_edges,
                                                    initial_routes, initial_costs, initial_orders)
     print(sol)
