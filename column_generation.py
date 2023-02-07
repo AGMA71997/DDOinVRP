@@ -141,7 +141,6 @@ class MasterProblem:
         return self.model.getAttr("Pi", self.model.getConstrs())
 
     def extract_solution(self):
-
         return [(key, self.y[key].x, self.orders[key]) for key in self.y if self.y[key].x > 0], self.model.objval
 
     def extract_columns(self):

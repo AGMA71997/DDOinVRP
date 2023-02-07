@@ -46,111 +46,110 @@ class Branch_and_Bound():
             route = entry[2]
             if entry[1] == 1:
                 ub_sol.append(route)
-                print("route: " + str(route))
                 customers_covered += route[1:-1]
                 obj += sum(time_matrix[route[i]][route[i + 1]] for i in range(len(route) - 1))
             else:
-                fractional_routes.append(route)
-        fractional_routes.sort(key=lambda x: len(x), reverse=True)
+                fractional_routes.append(entry[1:])
+        fractional_routes.sort(key=lambda x: x[0], reverse=True)
 
-        for route in fractional_routes:
+        for entry in fractional_routes:
             if len(customers_covered) < num_customers:
+                route = entry[1]
                 route_adj = [route[x] for x in range(len(route)) if route[x] not in customers_covered]
                 ub_sol.append(route_adj)
                 customers_covered += route_adj[1:-1]
                 obj += sum(time_matrix[route_adj[i]][route_adj[i + 1]] for i in range(len(route_adj) - 1))
             else:
                 break
-        print("#########")
-        print(customers_covered)
-        print("#########")
 
-        assert len(customers_covered) == num_customers
         return ub_sol, obj, fractional_routes
 
-    def determine_branching_rule(self, fractional_routes):
+    def determine_branching_rule(self, fractional_routes):  # CHANGE BRANCHING STRATEGY
 
-        for route in fractional_routes:
-            for i in range(len(route) - 2):
-                node_1 = route[i]
-                node_2 = route[i + 1]
-                for route_2 in fractional_routes:
-                    if route != route_2:
-                        if node_1 in route_2 and node_2 in route_2:
-                            index1 = route_2.index(node_1)
-                            index2 = route_2.index(node_2)
-                            if index2-index1 != 1:
-                                return [node_1, node_2]
+        edge_scores = {}
+        for entry in fractional_routes:
+            score = entry[0]
+            route = entry[1]
+            for i in range(len(route) - 1):
+                edge = (route[i], route[i + 1])
+                try:
+                    edge_scores[edge] += score
+                except:
+                    edge_scores[edge] = score
+        edge_scores_list = [(edge, score) for edge, score in edge_scores.items() if edge_scores[edge] < 1]
+        edge_scores_list.sort(key=lambda x: x[1], reverse=True)
+        return list(edge_scores_list[0][0])
 
     def branch(self, vehicle_capacity, time_matrix, demands,
                time_windows, time_limit, num_customers,
                service_times, edge, depth, forbidden_edges, compelled_edges, routes, costs, orders):
-        print("-----")
-        print(self.best_ub)
-        print(depth)
-        print(edge)
-        print("-----")
-        if abs(self.best_ub - self.best_lb) / self.best_ub < 0.01 or depth > self.max_depth:
+
+        if (self.best_ub - self.best_lb) / self.best_ub < 0.001 or depth > self.max_depth:
             return self.best_sol, self.best_ub
         depth += 1
 
         # edge=1
         compelled_copy = compelled_edges.copy()
         compelled_copy.append(edge)
-        lb_sol, lb_obj, routes1, costs1, orders1 = cg.solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix,
-                                                                                          demands,
-                                                                                          time_windows, time_limit,
-                                                                                          num_customers,
-                                                                                          service_times,
-                                                                                          forbidden_edges,
-                                                                                          compelled_copy,
-                                                                                          routes, costs, orders)
-        if lb_obj > self.best_lb:
-            self.best_lb = lb_obj
+        lb_sol1, lb_obj1, routes1, costs1, orders1 = cg.solve_relaxed_vrp_with_time_windows(vehicle_capacity,
+                                                                                            time_matrix,
+                                                                                            demands,
+                                                                                            time_windows, time_limit,
+                                                                                            num_customers,
+                                                                                            service_times,
+                                                                                            forbidden_edges,
+                                                                                            compelled_copy,
+                                                                                            routes, costs, orders)
+        if lb_obj1 > self.best_lb:
+            self.best_lb = lb_obj1
 
-        ub_sol, ub_obj, fractional_routes = self.generate_upper_bound(lb_sol, time_matrix, num_customers)
-        if ub_obj < self.best_ub:
-            self.best_ub = ub_obj
-            self.best_sol = ub_sol
+        ub_sol1, ub_obj1, fractional_routes1 = self.generate_upper_bound(lb_sol1, time_matrix, num_customers)
+        if ub_obj1 < self.best_ub:
+            self.best_ub = ub_obj1
+            self.best_sol = ub_sol1
 
-        if lb_obj < self.best_ub and ub_sol != []:
-            edge = self.determine_branching_rule(fractional_routes)
+        # edge=0
+        forbidden_copy = forbidden_edges.copy()
+        forbidden_copy.append(edge)
+        lb_sol2, lb_obj2, routes2, costs2, orders2 = cg.solve_relaxed_vrp_with_time_windows(vehicle_capacity,
+                                                                                            time_matrix,
+                                                                                            demands,
+                                                                                            time_windows, time_limit,
+                                                                                            num_customers,
+                                                                                            service_times,
+                                                                                            forbidden_copy,
+                                                                                            compelled_edges,
+                                                                                            routes, costs, orders)
+        if lb_obj2 > self.best_lb:
+            self.best_lb = lb_obj2
+
+        ub_sol2, ub_obj2, fractional_routes2 = self.generate_upper_bound(lb_sol2, time_matrix, num_customers)
+        if ub_obj2 < self.best_ub:
+            self.best_ub = ub_obj2
+            self.best_sol = ub_sol2
+
+        if lb_obj1 < self.best_ub and ub_sol1 != []:  #
+            edge = self.determine_branching_rule(fractional_routes1)
 
             sol_1, obj_1 = self.branch(vehicle_capacity, time_matrix, demands,
                                        time_windows, time_limit, num_customers,
                                        service_times, edge, depth, forbidden_edges, compelled_copy, routes1, costs1,
                                        orders1)
         else:
-            sol_1 = ub_sol
-            obj_1 = ub_obj
+            sol_1 = ub_sol1
+            obj_1 = ub_obj1
+            print("Node Pruned 1")
 
-        # edge=0
-        forbidden_copy = forbidden_edges.copy()
-        forbidden_copy.append(edge)
-        lb_sol, lb_obj, routes2, costs2, orders2 = cg.solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix,
-                                                                                          demands,
-                                                                                          time_windows, time_limit,
-                                                                                          num_customers,
-                                                                                          service_times, forbidden_copy,
-                                                                                          compelled_edges,
-                                                                                          routes, costs, orders)
-        if lb_obj > self.best_lb:
-            self.best_lb = lb_obj
-
-        ub_sol, ub_obj, fractional_routes = self.generate_upper_bound(lb_sol, time_matrix, num_customers)
-        if ub_obj < self.best_ub:
-            self.best_ub = ub_obj
-            self.best_sol = ub_sol
-
-        if lb_obj < self.best_ub and ub_sol != []:
-            edge = self.determine_branching_rule(fractional_routes)
+        if lb_obj2 < self.best_ub and ub_sol2 != []:
+            edge = self.determine_branching_rule(fractional_routes2)
             sol_2, obj_2 = self.branch(vehicle_capacity, time_matrix, demands,
                                        time_windows, time_limit, num_customers,
                                        service_times, edge, depth, forbidden_edges, compelled_edges, routes2, costs2,
                                        orders2)
         else:
-            sol_2 = ub_sol
-            obj_2 = ub_obj
+            sol_2 = ub_sol2
+            obj_2 = ub_obj2
+            print("Node Pruned 2")
 
         if obj_1 < obj_2:
             return sol_1, obj_1
