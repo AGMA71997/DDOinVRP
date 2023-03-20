@@ -9,7 +9,8 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
                                         initial_routes, initial_costs, initial_orders):
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
-    last_added = []
+
+    # CHANGE COMPELLED EDGES TO FORBIDDEN AS PER TUTORIAL PAPER
 
     if initial_routes == []:
         initial_routes, initial_costs, initial_orders = initialize_columns(num_customers, time_matrix)
@@ -18,26 +19,26 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
     master_problem = MasterProblem(num_customers, initial_routes, initial_costs, initial_orders, forbidden_edges,
                                    compelled_edges)
 
+    added_orders = initial_orders.copy()
     # Iterate until optimality is reached
     while True:
         master_problem.solve()
-        try:
-            duals = master_problem.retain_duals()
-        except:
-            print(forbidden_edges)
-            print(compelled_edges)
+        duals = master_problem.retain_duals()
         subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit,
                                 duals, service_times, forbidden_edges, compelled_edges)
         ordered_route, reduced_cost = subproblem.solve()
+        print("RC is " + str(reduced_cost))
+        print(ordered_route)
         cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
         route = convert_ordered_route(ordered_route, num_customers)
         # Check if the candidate column is optimal
-        if reduced_cost < 0 and last_added != ordered_route:
+        if reduced_cost < 0 and ordered_route not in added_orders:
             # Add the column to the master problem
             master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
-            last_added = ordered_route
+            added_orders.append(ordered_route)
         else:
             # Optimality has been reached
+            print("Addition Failed")
             break
 
     sol, obj = master_problem.extract_solution()
@@ -53,7 +54,7 @@ def initialize_columns(num_customers, time_matrix):
         route = np.zeros(num_customers)
         route[i] = 1
         singular_routes.append(route)
-        ordered_routes.append((0, i + 1, 0))
+        ordered_routes.append([0, i + 1, 0])
         costs.append(time_matrix[0][i + 1] + time_matrix[i + 1][0])
 
     return singular_routes, costs, ordered_routes
@@ -141,6 +142,7 @@ class MasterProblem:
         return self.model.getAttr("Pi", self.model.getConstrs())
 
     def extract_solution(self):
+        # print([(key, self.y[key].x, self.orders[key]) for key in self.y if self.y[key].x > 0])
         return [(key, self.y[key].x, self.orders[key]) for key in self.y if self.y[key].x > 0], self.model.objval
 
     def extract_columns(self):
@@ -175,20 +177,19 @@ class Subproblem:
                     if edge in forbidden_edges:
                         self.price[i, j] = math.inf
                     elif edge in compelled_edges:
-                        self.price[i, j] = -100000
+                        self.price[i, j] = -100000  # FIXXXXXXXXX??
 
     def dynamic_program(self, start_point, current_label, unvisited_customers, remaining_time, remaining_capacity,
                         current_time, current_price):
+
+        if current_time > self.time_windows[start_point, 1]:
+            return [], math.inf
         if start_point != 0:
-            if current_time > self.time_windows[start_point, 1]:
-                return [], math.inf
-            elif current_time < self.time_windows[start_point, 0]:
-                yet = self.time_windows[start_point, 0] - current_time
-                remaining_time -= yet
+            if current_time < self.time_windows[start_point, 0]:
                 current_time = self.time_windows[start_point, 0]
 
-            current_time += self.service_times[start_point]
-            remaining_time -= self.service_times[start_point]
+        current_time += self.service_times[start_point]
+        remaining_time -= self.service_times[start_point]
 
         if remaining_time < 0 or remaining_capacity < 0:
             return [], math.inf
@@ -237,7 +238,7 @@ class Subproblem:
 
 
 def main():
-    num_customers = 10
+    num_customers = 25
     VRP_instance = Instance_Generator(num_customers)
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows
@@ -250,9 +251,11 @@ def main():
     initial_routes = []
     initial_costs = []
     initial_orders = []
-    sol, obj,routes,costs, orders = solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, time_windows, time_limit,
-                                                   num_customers, service_times, forbidden_edges, compelled_edges,
-                                                   initial_routes, initial_costs, initial_orders)
+    sol, obj, routes, costs, orders = solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands,
+                                                                          time_windows, time_limit,
+                                                                          num_customers, service_times, forbidden_edges,
+                                                                          compelled_edges,
+                                                                          initial_routes, initial_costs, initial_orders)
     print(sol)
     print(obj)
 
