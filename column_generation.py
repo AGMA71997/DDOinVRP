@@ -2,6 +2,7 @@ import numpy as np
 import gurobipy as gb
 from instance_generator import Instance_Generator
 import math
+import random
 
 
 def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, time_windows, time_limit, num_customers,
@@ -9,8 +10,6 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
                                         initial_routes, initial_costs, initial_orders):
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
-
-    # CHANGE COMPELLED EDGES TO FORBIDDEN AS PER TUTORIAL PAPER
 
     if initial_routes == []:
         initial_routes, initial_costs, initial_orders = initialize_columns(num_customers, time_matrix)
@@ -142,7 +141,6 @@ class MasterProblem:
         return self.model.getAttr("Pi", self.model.getConstrs())
 
     def extract_solution(self):
-        # print([(key, self.y[key].x, self.orders[key]) for key in self.y if self.y[key].x > 0])
         return [(key, self.y[key].x, self.orders[key]) for key in self.y if self.y[key].x > 0], self.model.objval
 
     def extract_columns(self):
@@ -232,12 +230,13 @@ class Subproblem:
         current_time = 0
         current_price = 0
         best_route, best_cost = self.dynamic_program(start_point, current_label, unvisited_customers, remaining_time,
-                                                     remaining_capacity,
-                                                     current_time, current_price)
+                                                     remaining_capacity, current_time, current_price)
         return best_route, best_cost
 
 
 def main():
+    random.seed(5)
+    np.random.seed(25)
     num_customers = 25
     VRP_instance = Instance_Generator(num_customers)
     time_matrix = VRP_instance.time_matrix

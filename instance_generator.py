@@ -6,8 +6,6 @@ import math
 class Instance_Generator(object):
 
     def __init__(self, N):
-        random.seed(5)
-        numpy.random.seed(25)
         self.N = N
         self.time_matrix = self.create_time_matrix()
         max_distance = math.ceil(self.time_matrix.max())
@@ -62,7 +60,6 @@ class Instance_Generator(object):
 
 def main():
     VRP_instance = Instance_Generator(50)
-
 
 if __name__ == "__main__":
     main()
