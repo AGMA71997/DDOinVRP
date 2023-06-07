@@ -2,6 +2,7 @@ import time
 import column_generation as cg
 from instance_generator import Instance_Generator
 import sys
+import math
 
 
 class Branch_and_Bound():
@@ -50,6 +51,10 @@ class Branch_and_Bound():
 
     ##consider compelled and forbidden edges to improve bound generation
     def generate_upper_bound(self, lb_sol, time_matrix, num_customers):
+
+        if not lb_sol:
+            return [], math.inf, []
+
         ub_sol = []
         customers_covered = []
         fractional_routes = []

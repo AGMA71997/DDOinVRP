@@ -180,7 +180,6 @@ class Subproblem:
         for i in range(num_customers + 1):
             for j in range(num_customers + 1):
                 if i != j:
-                    edge = [i, j]
                     if i != 0:
                         self.price[i, j] = time_matrix[i, j] - duals[i - 1]
                     else:
