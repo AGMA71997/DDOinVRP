@@ -1,3 +1,4 @@
+import time
 import column_generation as cg
 from instance_generator import Instance_Generator
 import sys
@@ -20,6 +21,7 @@ class Branch_and_Bound():
         depth = 0
         forbidden_edges = []
         compelled_edges = []
+        time_1=time.time()
 
         lb_sol, lb_obj, routes, costs, orders = cg.solve_relaxed_vrp_with_time_windows(vehicle_capacity,
                                                                                        time_matrix, demands,
@@ -41,9 +43,10 @@ class Branch_and_Bound():
                                                                       service_times, edge, depth, forbidden_edges,
                                                                       compelled_edges, routes,
                                                                       costs, orders)
-
+        time_2=time.time()
         print("Optimal sol: " + str(optimal_sol))
         print("Optimal obj: " + str(optimal_obj))
+        print("Total time: "+str(time_2-time_1))
 
     ##consider compelled and forbidden edges to improve bound generation
     def generate_upper_bound(self, lb_sol, time_matrix, num_customers):
@@ -190,7 +193,7 @@ class Branch_and_Bound():
 
 
 def main():
-    num_customers = 10
+    num_customers = 20
     VRP_instance = Instance_Generator(num_customers)
     BNB = Branch_and_Bound(VRP_instance)
 

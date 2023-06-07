@@ -14,6 +14,9 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
     if initial_routes == []:
         initial_routes, initial_costs, initial_orders = initialize_columns(num_customers, time_matrix)
 
+    forbidden_edges = create_forbidden_edges_list(num_customers,forbidden_edges, compelled_edges)
+    compelled_edges = []
+
     # Initialize the master problem
     master_problem = MasterProblem(num_customers, initial_routes, initial_costs, initial_orders, forbidden_edges,
                                    compelled_edges)
@@ -24,7 +27,7 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
         master_problem.solve()
         duals = master_problem.retain_duals()
         subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit,
-                                duals, service_times, forbidden_edges, compelled_edges)
+                                duals, service_times, forbidden_edges)
         ordered_route, reduced_cost = subproblem.solve()
         print("RC is " + str(reduced_cost))
         print(ordered_route)
@@ -66,6 +69,11 @@ def convert_ordered_route(ordered_route, num_customers):
             route[customer - 1] = 1
     return route
 
+def create_forbidden_edges_list(num_customers, forbidden_edges, compelled_edges):
+    forbid_copy = forbidden_edges.copy()
+    for edge in compelled_edges:
+        forbid_copy += [[x, edge[1]] for x in range(num_customers + 1) if x != edge[0]]
+    return forbid_copy
 
 class MasterProblem:
     def __init__(self, num_customers, initial_routes, costs, ordered_routes, forbidden_edges, compelled_edges):
@@ -141,7 +149,12 @@ class MasterProblem:
         return self.model.getAttr("Pi", self.model.getConstrs())
 
     def extract_solution(self):
-        return [(key, self.y[key].x, self.orders[key]) for key in self.y if self.y[key].x > 0], self.model.objval
+        try:
+            return [(key, self.y[key].x, self.orders[key]) for key in self.y if self.y[key].x > 0], self.model.objval
+        except:
+            print(self.model.getAttr("Status"))
+            return [],math.inf
+
 
     def extract_columns(self):
         routes = [self.routes[x] for x in self.routes]
@@ -152,7 +165,7 @@ class MasterProblem:
 
 class Subproblem:
     def __init__(self, num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals,
-                 service_times, forbidden_edges, compelled_edges):
+                 service_times, forbidden_edges):
         self.num_customers = num_customers
         self.vehicle_capacity = vehicle_capacity
         self.time_matrix = time_matrix
@@ -162,20 +175,16 @@ class Subproblem:
         self.duals = duals
         self.service_times = service_times
         self.price = np.zeros((num_customers + 1, num_customers + 1))
+        self.forbidden_edges = forbidden_edges
 
         for i in range(num_customers + 1):
             for j in range(num_customers + 1):
                 if i != j:
+                    edge = [i, j]
                     if i != 0:
                         self.price[i, j] = time_matrix[i, j] - duals[i - 1]
                     else:
                         self.price[i, j] = time_matrix[i, j]
-
-                    edge = [i, j]
-                    if edge in forbidden_edges:
-                        self.price[i, j] = math.inf
-                    elif edge in compelled_edges:
-                        self.price[i, j] = -100000  # FIXXXXXXXXX??
 
     def dynamic_program(self, start_point, current_label, unvisited_customers, remaining_time, remaining_capacity,
                         current_time, current_price):
@@ -198,7 +207,7 @@ class Subproblem:
         best_label = []
         best_price = math.inf
         for j in unvisited_customers:
-            if j != start_point:
+            if j != start_point and [start_point,j] not in self.forbidden_edges:
                 copy_label = current_label.copy()
                 copy_unvisited = unvisited_customers.copy()
                 RT = remaining_time
@@ -237,7 +246,7 @@ class Subproblem:
 def main():
     random.seed(5)
     np.random.seed(25)
-    num_customers = 25
+    num_customers = 12
     VRP_instance = Instance_Generator(num_customers)
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows
