@@ -13,7 +13,7 @@ class Instance_Generator(object):
         self.time_windows = self.create_time_windows(max_distance, max_distance_to_depot)
         self.vehicle_capacity = 10
         self.demands = self.create_demands()
-        self.time_limit = 6.5
+        self.time_limit = 1000
         self.service_times = self.create_service_times()
 
     def create_time_matrix(self):
