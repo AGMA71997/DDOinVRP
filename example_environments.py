@@ -34,7 +34,7 @@ class ESPRCTW_Env(gym.Env):
             for j in range(num_customers + 1):
                 if i != j:
                     if i != 0:
-                        self.price[i, j] = time_matrix[i, j] - duals[i - 1]
+                        self.price[i, j] = (time_matrix[i, j] - duals[i - 1])*-1
                     else:
                         self.price[i, j] = time_matrix[i, j]
 
@@ -92,12 +92,13 @@ class ESPRCTW_Env(gym.Env):
         # Consider adding discounted rewards
 
         self.current_step += 1
-        if self.current_label[-1] == 0 and len(self.current_label)>2:
+        done = False
+        if self.current_label[-1] == 0 and len(self.current_label) > 2:
+            done = True
             self.current_step = 0
 
-        is_route = False
         obs = self._next_observation()
-        return obs, reward, is_route, {}
+        return obs, reward, done, {}
 
     def render(self, mode='human', close=False):
         # Render the environment to the screen
@@ -173,8 +174,8 @@ def main():
         # vec_env.render("human")
 
         # VecEnv resets automatically
-        #if done:
-            #obs = vec_env.reset()
+        # if done:
+        # obs = vec_env.reset()
 
 
 if __name__ == "__main__":
