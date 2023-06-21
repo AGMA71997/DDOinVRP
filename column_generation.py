@@ -14,7 +14,7 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
     if initial_routes == []:
         initial_routes, initial_costs, initial_orders = initialize_columns(num_customers, time_matrix)
 
-    forbidden_edges = create_forbidden_edges_list(num_customers,forbidden_edges, compelled_edges)
+    forbidden_edges = create_forbidden_edges_list(num_customers, forbidden_edges, compelled_edges)
     compelled_edges = []
 
     # Initialize the master problem
@@ -69,11 +69,37 @@ def convert_ordered_route(ordered_route, num_customers):
             route[customer - 1] = 1
     return route
 
+
 def create_forbidden_edges_list(num_customers, forbidden_edges, compelled_edges):
     forbid_copy = forbidden_edges.copy()
     for edge in compelled_edges:
         forbid_copy += [[x, edge[1]] for x in range(num_customers + 1) if x != edge[0]]
     return forbid_copy
+
+
+def check_route_feasibility(route, dist_matrix_data, time_windows, service_times, demands_data, truck_capacity):
+    current_time = max(dist_matrix_data[0, route[0]], time_windows[route[0], 0])
+    total_capacity = 0
+
+    for i in range(len(route)):
+        if current_time > time_windows[route[i], 1]:
+            print("Time Window violated")
+            print(route[i])
+            return False
+        current_time += service_times[route[i]]
+        total_capacity += demands_data[route[i]]
+        if total_capacity > truck_capacity:
+            print("Truck Capacity Violated")
+            return False
+        if i < len(route) - 1:
+            # travel to next node
+            current_time += dist_matrix_data[route[i], route[i + 1]]
+            current_time = max(current_time, time_windows[route[i + 1], 0])
+        else:
+            # travel back to depot
+            current_time += dist_matrix_data[route[i], 0]
+    return True
+
 
 class MasterProblem:
     def __init__(self, num_customers, initial_routes, costs, ordered_routes, forbidden_edges, compelled_edges):
@@ -153,8 +179,7 @@ class MasterProblem:
             return [(key, self.y[key].x, self.orders[key]) for key in self.y if self.y[key].x > 0], self.model.objval
         except:
             print(self.model.getAttr("Status"))
-            return [],math.inf
-
+            return [], math.inf
 
     def extract_columns(self):
         routes = [self.routes[x] for x in self.routes]
@@ -185,6 +210,12 @@ class Subproblem:
                     else:
                         self.price[i, j] = time_matrix[i, j]
 
+        print("TEST")
+        route = [0, 11, 6, 9, 3, 10, 12, 8, 0]
+        print(route)
+        print(check_route_feasibility(route, time_matrix, time_windows, service_times, demands, vehicle_capacity))
+        print(sum(self.price[route[i], route[i + 1]] for i in range(len(route) - 1)))
+
     def dynamic_program(self, start_point, current_label, unvisited_customers, remaining_time, remaining_capacity,
                         current_time, current_price):
 
@@ -206,7 +237,7 @@ class Subproblem:
         best_label = []
         best_price = math.inf
         for j in unvisited_customers:
-            if j != start_point and [start_point,j] not in self.forbidden_edges:
+            if j != start_point and [start_point, j] not in self.forbidden_edges:
                 copy_label = current_label.copy()
                 copy_unvisited = unvisited_customers.copy()
                 RT = remaining_time

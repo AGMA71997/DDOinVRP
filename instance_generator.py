@@ -30,14 +30,14 @@ class Instance_Generator(object):
 
         return time_matrix * 2
 
-    def create_time_windows(self, minimum_margin,depot_increment):
+    def create_time_windows(self, minimum_margin, depot_increment):
         time_windows = numpy.zeros((self.N + 1, 2))
         for i in range(self.N + 1):
             if i != 0:
                 time_windows[i, 0] = random.randint(0, 10)
                 time_windows[i, 1] = random.randint(time_windows[i, 0] + minimum_margin, 18)
 
-        time_windows[0,1]=18+depot_increment
+        time_windows[0, 1] = 18 + depot_increment
 
         return time_windows
 
@@ -60,6 +60,7 @@ class Instance_Generator(object):
 
 def main():
     VRP_instance = Instance_Generator(50)
+
 
 if __name__ == "__main__":
     main()

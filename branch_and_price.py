@@ -3,7 +3,8 @@ import column_generation as cg
 from instance_generator import Instance_Generator
 import sys
 import math
-
+import numpy
+import random
 
 class Branch_and_Bound():
 
@@ -198,9 +199,13 @@ class Branch_and_Bound():
 
 
 def main():
+
+    random.seed(5)
+    numpy.random.seed(25)
     num_customers = 20
     VRP_instance = Instance_Generator(num_customers)
     BNB = Branch_and_Bound(VRP_instance)
+
 
 
 if __name__ == "__main__":
