@@ -8,9 +8,7 @@ class Instance_Generator(object):
     def __init__(self, N):
         self.N = N
         self.time_matrix = self.create_time_matrix()
-        max_distance = math.ceil(self.time_matrix.max())
-        max_distance_to_depot = math.ceil(self.time_matrix[:, 0].max())
-        self.time_windows = self.create_time_windows(max_distance, max_distance_to_depot)
+        self.time_windows = self.create_time_windows(math.ceil(self.time_matrix[0,:].max()))
         self.vehicle_capacity = 10
         self.demands = self.create_demands()
         self.time_limit = 1000
@@ -30,14 +28,14 @@ class Instance_Generator(object):
 
         return time_matrix * 2
 
-    def create_time_windows(self, minimum_margin, depot_increment):
+    def create_time_windows(self, minimum_margin):
         time_windows = numpy.zeros((self.N + 1, 2))
         for i in range(self.N + 1):
             if i != 0:
                 time_windows[i, 0] = random.randint(0, 10)
                 time_windows[i, 1] = random.randint(time_windows[i, 0] + minimum_margin, 18)
 
-        time_windows[0, 1] = 18 + depot_increment
+        time_windows[0, 1] = 18
 
         return time_windows
 

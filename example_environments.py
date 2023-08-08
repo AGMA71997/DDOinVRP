@@ -85,9 +85,8 @@ class ESPRCTW_Env(gym.Env):
         return obs
 
     def _take_action(self, action):
-        reward = self.price[self.start_point, action]
         self.current_label.append(action)
-        self.current_price += reward
+        self.current_price += self.price[self.start_point, action]
         self.current_time = max(self.current_time + self.time_matrix[self.start_point, action],
                                 self.time_windows[action, 0])
         self.current_time += self.service_times[action]
@@ -95,11 +94,9 @@ class ESPRCTW_Env(gym.Env):
         self.remaining_capacity -= self.demands[action]
         self.start_point = action
 
-        return reward
-
     def step(self, action):
         # Execute one time step within the environment
-        reward = self._take_action(action)
+        self._take_action(action)
         # Consider adding discounted rewards
 
         self.current_step += 1
@@ -110,6 +107,11 @@ class ESPRCTW_Env(gym.Env):
 
         obs = self._next_observation()
         truncated = done
+        if not done:
+            reward = 0
+        else:
+            reward = self.current_price
+
         return obs, reward, done, truncated, {}
 
     def valid_action_mask(self):
@@ -159,7 +161,7 @@ class VecExtractDictObs(VecEnvWrapper):  # Example environment from stable-basel
 def main():
     random.seed(5)
     np.random.seed(25)
-    num_customers = 300
+    num_customers = 15
     VRP_instance = Instance_Generator(num_customers)
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows
@@ -170,7 +172,8 @@ def main():
     forbidden_edges = []
     compelled_edges = []
 
-    initial_routes, initial_costs, initial_orders = initialize_columns(num_customers, time_matrix)
+    initial_routes, initial_costs, initial_orders = initialize_columns(num_customers, vehicle_capacity, time_matrix,
+                                                                       service_times, time_windows, demands)
     master_problem = MasterProblem(num_customers, initial_routes, initial_costs, initial_orders, forbidden_edges,
                                    compelled_edges)
     master_problem.solve()
