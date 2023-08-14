@@ -26,7 +26,6 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
                 print("Infeasible route detected")
                 sys.exit(0)
 
-
     forbidden_edges = create_forbidden_edges_list(num_customers, forbidden_edges, compelled_edges)
     compelled_edges = []
 
@@ -103,7 +102,6 @@ def initialize_columns(num_customers, truck_capacity, time_matrix, service_times
                 remaining_capacity = truck_capacity
                 current_time = 0
                 break
-
 
     current_route.append(0)
     solution.append(current_route)
@@ -258,6 +256,9 @@ class Subproblem:
         self.price = time_matrix - duals
 
         self.determine_PULSE_bounds(2)
+        #route = [0, 6, 3, 1, 0]
+        #print(sum(self.price[route[x], route[x + 1]] for x in range(len(route) - 1)))
+        #print(check_route_feasibility(route, time_matrix, time_windows, service_times, demands, vehicle_capacity))
 
     def determine_PULSE_bounds(self, increment):
         self.increment = increment
@@ -377,7 +378,7 @@ class Subproblem:
 def main():
     random.seed(5)
     np.random.seed(25)
-    num_customers = 15
+    num_customers = 30
     VRP_instance = Instance_Generator(num_customers)
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows

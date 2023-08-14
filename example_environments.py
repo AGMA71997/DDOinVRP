@@ -1,10 +1,10 @@
 import gym
 import sys
 import torch
+import numpy as np
 
 from gymnasium import spaces
 from stable_baselines3 import PPO
-import numpy as np
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvStepReturn, VecEnvWrapper
 from stable_baselines3.common.vec_env import DummyVecEnv
 
@@ -41,19 +41,11 @@ class ESPRCTW_Env(gym.Env):
         self.demands = demands
         self.time_windows = time_windows
         self.time_limit = time_limit
-        self.duals = duals
         self.service_times = service_times
         self.price = np.zeros((num_customers + 1, num_customers + 1))
         self.forbidden_edges = forbidden_edges
         self.discount_factor = 0.9
-
-        for i in range(num_customers + 1):
-            for j in range(num_customers + 1):
-                if i != j:
-                    if i != 0:
-                        self.price[i, j] = (time_matrix[i, j] - duals[i - 1]) * -1
-                    else:
-                        self.price[i, j] = time_matrix[i, j]
+        self.calculate_price(duals)
 
         # Define action and observation space
         # They must be gym.spaces objects
@@ -62,6 +54,12 @@ class ESPRCTW_Env(gym.Env):
 
         # Example for using image as input:
         self.observation_space = spaces.Box(low=0, high=255, shape=(num_customers + 1, 6), dtype=np.float32)
+
+    def calculate_price(self, duals):
+        duals.insert(0, 0)
+        duals = np.array(duals)
+        duals = duals.reshape((len(duals), 1))
+        self.price = (self.time_matrix - duals)*-1
 
     def reset(self, seed, options):
         # Reset the state of the environment to an initial state
@@ -117,7 +115,9 @@ class ESPRCTW_Env(gym.Env):
     def valid_action_mask(self):
         feasible_actions = np.ones(self.num_customers + 1, dtype=bool)
         for i in range(self.num_customers + 1):
-            total_return_time = self.time_matrix[self.start_point, i] + self.service_times[i] + self.time_matrix[i, 0]
+            waiting_time = max(self.time_windows[i, 0] - (self.current_time + self.time_matrix[self.start_point, i]), 0)
+            total_return_time = self.time_matrix[self.start_point, i] + waiting_time + self.service_times[i] + \
+                                self.time_matrix[i, 0]
             if (self.current_time + self.time_matrix[self.start_point, i] > self.time_windows[
                 i, 1] or self.remaining_capacity < self.demands[i] or i in self.current_label
                     or self.current_time + total_return_time > self.time_windows[0, 1] or
@@ -161,7 +161,7 @@ class VecExtractDictObs(VecEnvWrapper):  # Example environment from stable-basel
 def main():
     random.seed(5)
     np.random.seed(25)
-    num_customers = 15
+    num_customers = 30
     VRP_instance = Instance_Generator(num_customers)
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows
@@ -182,30 +182,35 @@ def main():
     # Example deployment of environment with stable baseline
     # env = gym.make("CartPole-v1", render_mode="rgb_array")  # Random registered environment
 
+    randis = np.random.uniform(low=0.5, high=2.5, size=len(duals))
+    duals_2 = [duals[x] - randis[x] for x in range(len(duals))]
+
+    env = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals,
+                      service_times, forbidden_edges)
+
+    # env_2 = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals_2,
+    # service_times, forbidden_edges)
+
     # Environment wrapper Custom Vectorized Dummy Environment
-    '''env = DummyVecEnv(
-        [lambda: ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals,
-                             service_times, forbidden_edges)])'''
+    # env = DummyVecEnv([lambda: env, lambda:env_2])
 
     # Wrap the DummyVecEnv
     # env = VecExtractDictObs(env, key="observation")
 
-    env = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals,
-                      service_times, forbidden_edges)
-    env = ActionMasker(env, mask_fn)
+    env = ActionMasker(env, mask_fn)  # Maskable environment
 
     model = MaskablePPO(MaskableActorCriticPolicy, env, verbose=1)
-    model.learn(total_timesteps=20000)
+    # model = PPO("MlpPolicy", env, verbose=1)
+    model.learn(total_timesteps=50000)
     # model = MaskablePPO.load("PPO maskable RL agent")
 
-    print(evaluate_policy(model, env, n_eval_episodes=20))
-
+    print(evaluate_policy(model, env, deterministic=True))
     vec_env = model.get_env()
     obs = vec_env.reset()
-    for i in range(50):
+    for i in range(10):
         action_mask = vec_env.env_method("valid_action_mask")
 
-        action, _state = model.predict(obs, action_masks=action_mask)
+        action, _state = model.predict(obs, action_masks=action_mask, deterministic=True)
         print(action)
         # print(model.policy.get_distribution(torch.from_numpy(obs)).distribution.probs)
         obs, reward, done, info = vec_env.step(action)
@@ -217,6 +222,8 @@ def main():
             obs = vec_env.reset()
 
     # model.save("PPO maskable RL agent")
+    # vec_env.env_method("calculate_price", duals_2)
+    # model.learn(total_timesteps=10000)
 
 
 if __name__ == "__main__":
