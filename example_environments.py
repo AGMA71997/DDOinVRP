@@ -207,7 +207,7 @@ def main():
     print(evaluate_policy(model, env, deterministic=True))
     vec_env = model.get_env()
     obs = vec_env.reset()
-    for i in range(10):
+    for i in range(0):
         action_mask = vec_env.env_method("valid_action_mask")
 
         action, _state = model.predict(obs, action_masks=action_mask, deterministic=True)

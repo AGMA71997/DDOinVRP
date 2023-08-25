@@ -33,7 +33,7 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
     master_problem = MasterProblem(num_customers, initial_routes, initial_costs, initial_orders, forbidden_edges,
                                    compelled_edges)
 
-    added_orders = initial_orders.copy()  #### MIGHT FIX AND AVOID COPYING
+    added_orders = initial_orders  #### fix to include all routes from previous branches
     # Iterate until optimality is reached
     while True:
         master_problem.solve()
@@ -256,9 +256,9 @@ class Subproblem:
         self.price = time_matrix - duals
 
         self.determine_PULSE_bounds(2)
-        #route = [0, 6, 3, 1, 0]
-        #print(sum(self.price[route[x], route[x + 1]] for x in range(len(route) - 1)))
-        #print(check_route_feasibility(route, time_matrix, time_windows, service_times, demands, vehicle_capacity))
+        # route = [0, 6, 3, 1, 0]
+        # print(sum(self.price[route[x], route[x + 1]] for x in range(len(route) - 1)))
+        # print(check_route_feasibility(route, time_matrix, time_windows, service_times, demands, vehicle_capacity))
 
     def determine_PULSE_bounds(self, increment):
         self.increment = increment
@@ -290,7 +290,8 @@ class Subproblem:
         if start_point == 0 and len(current_label) > 1:
             return current_label, current_price
 
-        current_time = max(self.time_windows[start_point, 0], current_time)
+        waiting_time = max(self.time_windows[start_point, 0] - current_time, 0)
+        current_time += waiting_time
         current_time += self.service_times[start_point]
 
         inc = math.ceil(self.no_of_increments - (self.time_windows[0, 1] - current_time) / self.increment)
@@ -299,6 +300,10 @@ class Subproblem:
                 bound_estimate = current_price + self.bounds[start_point - 1, inc - 1]
                 if bound_estimate > best_bound:
                     return [], math.inf
+                elif not bool(set(current_label[:-1]) & set(self.supreme_labels[start_point, inc])):
+                    if sum([self.demands[x] for x in
+                            current_label[:-1] + self.supreme_labels[start_point, inc]]) <= self.vehicle_capacity:
+                        return current_label[:-1] + self.supreme_labels[start_point, inc], bound_estimate
 
         best_label = []
         for j in unvisited_customers:
@@ -315,6 +320,19 @@ class Subproblem:
                 RC -= self.demands[j]
                 CT += self.time_matrix[start_point, j]
                 CP += self.price[start_point, j]
+
+                if len(copy_label) > 2 and copy_label[-1] != 0:
+                    roll_back_price = CP - (self.price[copy_label[-3], start_point] + self.price[start_point, j]) + \
+                                      self.price[copy_label[-3], j]
+
+                    roll_back_time = CT - (
+                            self.time_matrix[start_point, j] + self.service_times[start_point] + waiting_time +
+                            self.time_matrix[copy_label[-3], start_point])
+                    roll_back_time += self.time_matrix[copy_label[-3], j]
+                    roll_back_time = max(roll_back_time, self.time_windows[j, 0])
+
+                    if roll_back_price <= CP and roll_back_time <= max(self.time_windows[j, 0], CT):
+                        CT = math.inf
 
                 label, lower_bound = self.bound_calculator(j, copy_label, copy_unvisited, RC, CT, CP,
                                                            best_bound)
