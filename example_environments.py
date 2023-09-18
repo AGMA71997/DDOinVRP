@@ -2,6 +2,7 @@ import gym
 import sys
 import torch
 import numpy as np
+import math
 
 from gymnasium import spaces
 from stable_baselines3 import PPO
@@ -25,7 +26,7 @@ def mask_fn(env):
     # Do whatever you'd like in this function to return the action mask
     # for the current env. In this example, we assume the env has a
     # helpful method we can rely on.
-    return env.valid_action_mask()
+    return env.unwrapped.valid_action_mask()
 
 
 class ESPRCTW_Env(gym.Env):
@@ -42,10 +43,14 @@ class ESPRCTW_Env(gym.Env):
         self.time_windows = time_windows
         self.time_limit = time_limit
         self.service_times = service_times
-        self.price = np.zeros((num_customers + 1, num_customers + 1))
         self.forbidden_edges = forbidden_edges
-        self.discount_factor = 0.9
+        self.discount_factor = 1
+
         self.calculate_price(duals)
+        self.best_reward = 0
+        self.K = 3
+        self.determine_nearest_customers()
+
 
         # Define action and observation space
         # They must be gym.spaces objects
@@ -53,13 +58,30 @@ class ESPRCTW_Env(gym.Env):
         self.action_space = spaces.Discrete(num_customers + 1)
 
         # Example for using image as input:
-        self.observation_space = spaces.Box(low=0, high=255, shape=(num_customers + 1, 6), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=255, shape=(num_customers + 1, 7), dtype=np.float32)
 
     def calculate_price(self, duals):
         duals.insert(0, 0)
         duals = np.array(duals)
         duals = duals.reshape((len(duals), 1))
-        self.price = (self.time_matrix - duals)*-1
+        self.price = (self.time_matrix - duals) * -1
+
+    def update_instance(self, num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals,
+                        service_times, forbidden_edges):
+        self.__init__(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals,
+                      service_times, forbidden_edges)
+
+    def determine_nearest_customers(self):
+        # nearest_customers=np.zeros((self.num_customers+1, self.K),dtype=int)
+        average_price = np.zeros((self.num_customers + 1))
+        average_capacity = np.zeros((self.num_customers + 1))
+        for i in range(len(average_capacity)):
+            nearest_customers = np.argsort(self.time_matrix[i, :].copy())[:self.K]
+            average_price[i] = sum(self.price[i, int(x)] for x in nearest_customers) / self.K
+            average_capacity[i] = sum(self.demands[int(x)] for x in nearest_customers) / self.K
+
+        self.average_price = average_price
+        self.average_capacity = average_capacity
 
     def reset(self, seed, options):
         # Reset the state of the environment to an initial state
@@ -73,13 +95,16 @@ class ESPRCTW_Env(gym.Env):
         return self._next_observation(), {}
 
     def _next_observation(self):
-        obs = np.zeros((self.num_customers + 1, 6))
+        obs = np.zeros((self.num_customers + 1, 7))
+
         for i in range(len(obs)):
             obs[i, :] = [self.price[self.start_point, i], self.demands[i],
-                         self.time_windows[i, 0] - (self.current_time + self.time_matrix[self.start_point, i]),
+                         max(self.time_windows[i, 0] - (self.current_time + self.time_matrix[self.start_point, i]), 0),
                          self.time_matrix[self.start_point, i],
                          self.service_times[i],
-                         self.time_windows[i, 1] - self.current_time]
+                         self.average_price[i],
+                         self.average_capacity[i]]
+
         return obs
 
     def _take_action(self, action):
@@ -99,7 +124,7 @@ class ESPRCTW_Env(gym.Env):
 
         self.current_step += 1
         done = False
-        if self.current_label[-1] == 0 and len(self.current_label) > 2:
+        if (self.current_label[-1] == 0 and len(self.current_label) > 2):
             done = True
             self.current_step = 0
 
@@ -109,6 +134,8 @@ class ESPRCTW_Env(gym.Env):
             reward = 0
         else:
             reward = self.current_price
+            if reward > self.best_reward:
+                self.best_reward = reward
 
         return obs, reward, done, truncated, {}
 
@@ -161,7 +188,7 @@ class VecExtractDictObs(VecEnvWrapper):  # Example environment from stable-basel
 def main():
     random.seed(5)
     np.random.seed(25)
-    num_customers = 30
+    num_customers = 50
     VRP_instance = Instance_Generator(num_customers)
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows
@@ -198,23 +225,24 @@ def main():
     # env = VecExtractDictObs(env, key="observation")
 
     env = ActionMasker(env, mask_fn)  # Maskable environment
-
     model = MaskablePPO(MaskableActorCriticPolicy, env, verbose=1)
+
     # model = PPO("MlpPolicy", env, verbose=1)
-    model.learn(total_timesteps=50000)
+    model.learn(total_timesteps=1000, log_interval=1)
     # model = MaskablePPO.load("PPO maskable RL agent")
 
-    print(evaluate_policy(model, env, deterministic=True))
     vec_env = model.get_env()
+    print(evaluate_policy(model, vec_env, deterministic=True))
     obs = vec_env.reset()
-    for i in range(0):
-        action_mask = vec_env.env_method("valid_action_mask")
+    for i in range(5):
+        action_mask = env.unwrapped.valid_action_mask()  # vec_env.env_method("valid_action_mask")
 
         action, _state = model.predict(obs, action_masks=action_mask, deterministic=True)
         print(action)
         # print(model.policy.get_distribution(torch.from_numpy(obs)).distribution.probs)
         obs, reward, done, info = vec_env.step(action)
-        print(vec_env.get_attr("current_label"))
+        print(env.unwrapped.current_label)
+        # print(vec_env.get_attr("current_label"))
 
         # vec_env.render("human")
         # VecEnv resets automatically
@@ -222,7 +250,7 @@ def main():
             obs = vec_env.reset()
 
     # model.save("PPO maskable RL agent")
-    # vec_env.env_method("calculate_price", duals_2)
+    env.unwrapped.calculate_price(duals_2)
     # model.learn(total_timesteps=10000)
 
 

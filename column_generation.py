@@ -6,6 +6,7 @@ from instance_generator import Instance_Generator
 import math
 import random
 import time
+from threading import Thread
 
 
 def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, time_windows, time_limit, num_customers,
@@ -33,7 +34,8 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
     master_problem = MasterProblem(num_customers, initial_routes, initial_costs, initial_orders, forbidden_edges,
                                    compelled_edges)
 
-    added_orders = initial_orders  #### fix to include all routes from previous branches
+    added_orders = initial_orders
+
     # Iterate until optimality is reached
     while True:
         master_problem.solve()
@@ -256,6 +258,7 @@ class Subproblem:
         self.price = time_matrix - duals
 
         self.determine_PULSE_bounds(2)
+
         # route = [0, 6, 3, 1, 0]
         # print(sum(self.price[route[x], route[x + 1]] for x in range(len(route) - 1)))
         # print(check_route_feasibility(route, time_matrix, time_windows, service_times, demands, vehicle_capacity))
@@ -265,8 +268,10 @@ class Subproblem:
         self.no_of_increments = math.ceil(self.time_windows[0, 1] / self.increment - 1)
         self.bounds = np.zeros((self.num_customers, self.no_of_increments)) + math.inf
         self.supreme_labels = {}
+        self.supreme_capacities = {}
 
         for inc in range(self.no_of_increments, 0, -1):
+            threads = []
             for cus in range(1, self.num_customers + 1):
                 start_point = cus
                 current_label = [cus]
@@ -276,10 +281,18 @@ class Subproblem:
                 current_time = self.time_windows[0, 1] - (self.no_of_increments - inc + 1) * increment
                 current_price = 0
                 best_bound = math.inf
-                label, lower_bound = self.bound_calculator(start_point, current_label, unvisited_customers,
-                                                           remaining_capacity, current_time, current_price, best_bound)
-                self.bounds[cus - 1, inc - 1] = lower_bound
-                self.supreme_labels[cus, inc] = label
+                thread = Bound_Threader(target=self.bound_calculator, args=(start_point, current_label,
+                                                                            unvisited_customers, remaining_capacity,
+                                                                            current_time, current_price,
+                                                                            best_bound))
+                thread.start()
+                threads.append(thread)
+
+
+            for index, thread in enumerate(threads):
+                label, lower_bound = thread.join()
+                self.bounds[index, inc - 1] = lower_bound
+                self.supreme_labels[index+1, inc] = label
 
     def bound_calculator(self, start_point, current_label, unvisited_customers,
                          remaining_capacity, current_time, current_price, best_bound):
@@ -300,10 +313,6 @@ class Subproblem:
                 bound_estimate = current_price + self.bounds[start_point - 1, inc - 1]
                 if bound_estimate > best_bound:
                     return [], math.inf
-                elif not bool(set(current_label[:-1]) & set(self.supreme_labels[start_point, inc])):
-                    if sum([self.demands[x] for x in
-                            current_label[:-1] + self.supreme_labels[start_point, inc]]) <= self.vehicle_capacity:
-                        return current_label[:-1] + self.supreme_labels[start_point, inc], bound_estimate
 
         best_label = []
         for j in unvisited_customers:
@@ -321,7 +330,7 @@ class Subproblem:
                 CT += self.time_matrix[start_point, j]
                 CP += self.price[start_point, j]
 
-                if len(copy_label) > 2 and copy_label[-1] != 0:
+                if len(copy_label) > 2 and j != 0:
                     roll_back_price = CP - (self.price[copy_label[-3], start_point] + self.price[start_point, j]) + \
                                       self.price[copy_label[-3], j]
 
@@ -387,10 +396,24 @@ class Subproblem:
         current_price = 0
         best_bound = math.inf
         best_route, best_cost = self.bound_calculator(start_point, current_label, unvisited_customers,
-                                                      remaining_capacity, current_time, current_price, best_bound)
-        # best_route, best_cost = self.dynamic_program(start_point, current_label, unvisited_customers,
-        # remaining_capacity, current_time, current_price)
+                                                      remaining_capacity, current_time, current_price,
+                                                      best_bound)
         return best_route, best_cost
+
+
+class Bound_Threader(Thread):
+
+    def __init__(self, target, args):
+        Thread.__init__(self, target=target, args=args)
+        self._return = None
+
+    def run(self):
+        if self._target is not None:
+            self._return = self._target(*self._args, **self._kwargs)
+
+    def join(self):
+        Thread.join(self)
+        return self._return
 
 
 def main():
