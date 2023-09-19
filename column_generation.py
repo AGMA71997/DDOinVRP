@@ -137,13 +137,13 @@ def check_route_feasibility(route, dist_matrix_data, time_windows, service_times
 
     for i in range(1, len(route)):
         if current_time > time_windows[route[i], 1]:
-            print("Time Window violated")
-            print(route[i])
+            #print("Time Window violated")
+            #print(route[i])
             return False
         current_time += service_times[route[i]]
         total_capacity += demands_data[route[i]]
         if total_capacity > truck_capacity:
-            print("Truck Capacity Violated")
+            #print("Truck Capacity Violated")
             return False
         if i < len(route) - 1:
             # travel to next node
@@ -270,8 +270,9 @@ class Subproblem:
         self.supreme_labels = {}
         self.supreme_capacities = {}
 
-        for inc in range(self.no_of_increments, 0, -1):
+        for inc in range(self.no_of_increments, 4, -1):
             threads = []
+            #print(inc)
             for cus in range(1, self.num_customers + 1):
                 start_point = cus
                 current_label = [cus]
@@ -288,11 +289,10 @@ class Subproblem:
                 thread.start()
                 threads.append(thread)
 
-
             for index, thread in enumerate(threads):
                 label, lower_bound = thread.join()
                 self.bounds[index, inc - 1] = lower_bound
-                self.supreme_labels[index+1, inc] = label
+                self.supreme_labels[index + 1, inc] = label
 
     def bound_calculator(self, start_point, current_label, unvisited_customers,
                          remaining_capacity, current_time, current_price, best_bound):
@@ -311,6 +311,7 @@ class Subproblem:
         if 0 < inc <= self.no_of_increments:
             if self.bounds[start_point - 1, inc - 1] < math.inf:
                 bound_estimate = current_price + self.bounds[start_point - 1, inc - 1]
+                pro_route = current_label[:-1] + self.supreme_labels[start_point, inc]
                 if bound_estimate > best_bound:
                     return [], math.inf
 
@@ -419,7 +420,7 @@ class Bound_Threader(Thread):
 def main():
     random.seed(5)
     np.random.seed(25)
-    num_customers = 30
+    num_customers = 15
     VRP_instance = Instance_Generator(num_customers)
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows
