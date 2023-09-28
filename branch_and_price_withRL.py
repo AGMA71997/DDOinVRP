@@ -1,66 +1,14 @@
 import time
 import column_generation as cg
+import CG_and_RL as cgrl
+from branch_and_price import generate_upper_bound, determine_branching_rule
 from instance_generator import Instance_Generator
 import sys
-import math
 import numpy
 import random
 
 
-def generate_upper_bound(lb_sol, time_matrix, num_customers):
-
-    if not lb_sol:
-        return [], math.inf, []
-
-    ub_sol = []
-    customers_covered = []
-    fractional_routes = []
-    obj = 0
-    for entry in lb_sol:
-        route = entry[2]
-        if entry[1] == 1:
-            ub_sol.append(route)
-            customers_covered += route[1:-1]
-            obj += sum(time_matrix[route[i], route[i + 1]] for i in range(len(route) - 1))
-        else:
-            fractional_routes.append(entry[1:])
-
-    customers_covered = list(set(customers_covered))
-    fractional_routes.sort(key=lambda x: x[0], reverse=True)
-
-    for entry in fractional_routes:
-        if len(customers_covered) < num_customers:
-            route = entry[1]
-            ub_sol.append(route)
-            customers_covered += route[1:-1]
-            customers_covered = list(set(customers_covered))
-            obj += sum(time_matrix[route[i]][route[i + 1]] for i in range(len(route) - 1))
-        else:
-            break
-
-    return ub_sol, obj, fractional_routes
-
-
-def determine_branching_rule(fractional_routes):
-
-    edge_scores = {}
-    for entry in fractional_routes:
-        score = entry[0]
-        route = entry[1]
-        for i in range(len(route) - 1):
-            edge = (route[i], route[i + 1])
-            try:
-                edge_scores[edge] += score
-            except:
-                edge_scores[edge] = score
-    edge_scores_list = [(edge, score) for edge, score in edge_scores.items() if edge_scores[edge] < 0.99]
-    edge_scores_list.sort(key=lambda x: x[1], reverse=True)
-
-    print(edge_scores_list)
-    return list(edge_scores_list[0][0])
-
-
-class Branch_and_Bound(object):
+class Branch_and_Bound_RL(object):
 
     def __init__(self, VRP_instance):
         num_customers = VRP_instance.N
@@ -92,16 +40,19 @@ class Branch_and_Bound(object):
                 sys.exit(0)
         self.best_ub = total_cost
         self.best_sol = initial_orders
+        solve = True
 
         time_1 = time.time()
-        lb_sol, lb_obj, routes, costs, orders = cg.solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix,
-                                                                                       demands, time_windows,
-                                                                                       time_limit, num_customers,
-                                                                                       service_times,
-                                                                                       forbidden_edges,
-                                                                                       compelled_edges,
-                                                                                       initial_routes, initial_costs,
-                                                                                       initial_orders)
+        lb_sol, lb_obj, routes, costs, orders = cgrl.RL_solve_relaxed_vrp_with_time_windows(vehicle_capacity,
+                                                                                            time_matrix,
+                                                                                            demands, time_windows,
+                                                                                            time_limit, num_customers,
+                                                                                            service_times,
+                                                                                            forbidden_edges,
+                                                                                            compelled_edges,
+                                                                                            initial_routes,
+                                                                                            initial_costs,
+                                                                                            initial_orders, solve)
         print("best_lb: " + str(lb_obj))
         print("lb_sol: " + str(lb_sol))
         sol, ub, fractional_routes = generate_upper_bound(lb_sol, time_matrix, num_customers)
@@ -116,18 +67,18 @@ class Branch_and_Bound(object):
                                                                       time_windows, time_limit, num_customers,
                                                                       service_times, edge, depth, forbidden_edges,
                                                                       compelled_edges, routes,
-                                                                      costs, orders)
+                                                                      costs, orders, solve)
         time_2 = time.time()
         print("Optimal sol: " + str(optimal_sol))
         print("Optimal obj: " + str(optimal_obj))
-        print("Total routes generated: "+str(len(orders)))
+        print("Total routes generated: " + str(len(orders)))
         print("Total time: " + str(time_2 - time_1))
 
     ##consider compelled and forbidden edges to improve bound generation
 
-    def branch(self, vehicle_capacity, time_matrix, demands,
-               time_windows, time_limit, num_customers,
-               service_times, edge, depth, forbidden_edges, compelled_edges, routes, costs, orders):
+    def branch(self, vehicle_capacity, time_matrix, demands, time_windows, time_limit, num_customers,
+               service_times, edge, depth, forbidden_edges, compelled_edges, routes, costs, orders,
+               solve):
 
         if depth > self.max_depth:
             print("Maximum Depth Reached")
@@ -143,15 +94,16 @@ class Branch_and_Bound(object):
         # edge=1
         compelled_edges.append(edge)
         print("Solve for 1")
-        lb_sol1, lb_obj1, routes, costs, orders = cg.solve_relaxed_vrp_with_time_windows(vehicle_capacity,
-                                                                                         time_matrix,
-                                                                                         demands,
-                                                                                         time_windows, time_limit,
-                                                                                         num_customers,
-                                                                                         service_times,
-                                                                                         forbidden_edges[:],
-                                                                                         compelled_edges[:],
-                                                                                         routes, costs, orders)
+        lb_sol1, lb_obj1, routes, costs, orders = cgrl.RL_solve_relaxed_vrp_with_time_windows(vehicle_capacity,
+                                                                                              time_matrix,
+                                                                                              demands,
+                                                                                              time_windows, time_limit,
+                                                                                              num_customers,
+                                                                                              service_times,
+                                                                                              forbidden_edges[:],
+                                                                                              compelled_edges[:],
+                                                                                              routes, costs, orders,
+                                                                                              solve)
 
         ub_sol1, ub_obj1, fractional_routes1 = generate_upper_bound(lb_sol1, time_matrix, num_customers)
         if ub_obj1 < self.best_ub:
@@ -161,15 +113,16 @@ class Branch_and_Bound(object):
         # edge=0
         forbidden_edges.append(edge)
         print("Solve for 0")
-        lb_sol2, lb_obj2, routes, costs, orders = cg.solve_relaxed_vrp_with_time_windows(vehicle_capacity,
-                                                                                         time_matrix,
-                                                                                         demands,
-                                                                                         time_windows, time_limit,
-                                                                                         num_customers,
-                                                                                         service_times,
-                                                                                         forbidden_edges[:],
-                                                                                         compelled_edges[0:-1],
-                                                                                         routes, costs, orders)
+        lb_sol2, lb_obj2, routes, costs, orders = cgrl.RL_solve_relaxed_vrp_with_time_windows(vehicle_capacity,
+                                                                                              time_matrix,
+                                                                                              demands,
+                                                                                              time_windows, time_limit,
+                                                                                              num_customers,
+                                                                                              service_times,
+                                                                                              forbidden_edges[:],
+                                                                                              compelled_edges[0:-1],
+                                                                                              routes, costs, orders,
+                                                                                              solve)
 
         ub_sol2, ub_obj2, fractional_routes2 = generate_upper_bound(lb_sol2, time_matrix, num_customers)
         if ub_obj2 < self.best_ub:
@@ -188,7 +141,7 @@ class Branch_and_Bound(object):
                                                               time_windows, time_limit, num_customers,
                                                               service_times, edge1, depth, forbidden_edges[0:-1],
                                                               compelled_edges[:], routes, costs,
-                                                              orders)
+                                                              orders, solve)
         else:
             sol_1 = ub_sol1
             obj_1 = ub_obj1
@@ -206,7 +159,7 @@ class Branch_and_Bound(object):
                                                               time_windows, time_limit, num_customers,
                                                               service_times, edge2, depth, forbidden_edges[:],
                                                               compelled_edges[0:-1], routes, costs,
-                                                              orders)
+                                                              orders, solve)
         else:
             sol_2 = ub_sol2
             obj_2 = ub_obj2
@@ -225,7 +178,7 @@ def main():
     numpy.random.seed(25)
     num_customers = 25
     VRP_instance = Instance_Generator(num_customers)
-    BNB = Branch_and_Bound(VRP_instance)
+    BNB = Branch_and_Bound_RL(VRP_instance)
 
 
 if __name__ == "__main__":

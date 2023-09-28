@@ -1,13 +1,15 @@
 import gym
+# from gym import spaces
 import sys
 import torch
 import numpy as np
 import math
 
+import gymnasium
 from gymnasium import spaces
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvStepReturn, VecEnvWrapper
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 from sb3_contrib.common.envs import InvalidActionEnvDiscrete
 from sb3_contrib.common.maskable.evaluation import evaluate_policy
@@ -29,6 +31,13 @@ def mask_fn(env):
     return env.unwrapped.valid_action_mask()
 
 
+def standardize(matrix, max_val=None):
+    min_val = np.min(matrix)
+    if max_val is None:
+        max_val = np.max(matrix)
+    return (matrix - min_val) / (max_val - min_val)
+
+
 class ESPRCTW_Env(gym.Env):
     """Custom Environment that follows gym interface"""
     metadata = {'render.modes': ['human']}
@@ -46,11 +55,13 @@ class ESPRCTW_Env(gym.Env):
         self.forbidden_edges = forbidden_edges
         self.discount_factor = 1
 
-        self.calculate_price(duals)
-        self.best_reward = 0
-        self.K = 3
-        self.determine_nearest_customers()
+        self.price = self.calculate_price(duals)
+        self.original_price = np.copy(self.price)
+        self.price = standardize(self.price)
 
+        self.best_reward = 0
+        self.K = 5
+        self.determine_nearest_customers()
 
         # Define action and observation space
         # They must be gym.spaces objects
@@ -58,13 +69,16 @@ class ESPRCTW_Env(gym.Env):
         self.action_space = spaces.Discrete(num_customers + 1)
 
         # Example for using image as input:
-        self.observation_space = spaces.Box(low=0, high=255, shape=(num_customers + 1, 7), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=255, shape=(num_customers + 1, 8), dtype=np.float32)
 
     def calculate_price(self, duals):
         duals.insert(0, 0)
         duals = np.array(duals)
         duals = duals.reshape((len(duals), 1))
-        self.price = (self.time_matrix - duals) * -1
+        return (self.time_matrix - duals) * -1
+
+    def calculate_real_reward(self, label):
+        return sum(self.original_price[label[i], label[i + 1]] for i in range(len(label) - 1))
 
     def update_instance(self, num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals,
                         service_times, forbidden_edges):
@@ -72,16 +86,18 @@ class ESPRCTW_Env(gym.Env):
                       service_times, forbidden_edges)
 
     def determine_nearest_customers(self):
-        # nearest_customers=np.zeros((self.num_customers+1, self.K),dtype=int)
         average_price = np.zeros((self.num_customers + 1))
         average_capacity = np.zeros((self.num_customers + 1))
+        average_time = np.zeros(self.num_customers + 1)
         for i in range(len(average_capacity)):
             nearest_customers = np.argsort(self.time_matrix[i, :].copy())[:self.K]
             average_price[i] = sum(self.price[i, int(x)] for x in nearest_customers) / self.K
             average_capacity[i] = sum(self.demands[int(x)] for x in nearest_customers) / self.K
+            average_time[i] = sum(self.time_matrix[i, int(x)] for x in nearest_customers) / self.K
 
         self.average_price = average_price
         self.average_capacity = average_capacity
+        self.average_time = average_time
 
     def reset(self, seed, options):
         # Reset the state of the environment to an initial state
@@ -95,7 +111,7 @@ class ESPRCTW_Env(gym.Env):
         return self._next_observation(), {}
 
     def _next_observation(self):
-        obs = np.zeros((self.num_customers + 1, 7))
+        obs = np.zeros((self.num_customers + 1, 8))
 
         for i in range(len(obs)):
             obs[i, :] = [self.price[self.start_point, i], self.demands[i],
@@ -103,7 +119,8 @@ class ESPRCTW_Env(gym.Env):
                          self.time_matrix[self.start_point, i],
                          self.service_times[i],
                          self.average_price[i],
-                         self.average_capacity[i]]
+                         self.average_capacity[i],
+                         self.average_time[i]]
 
         return obs
 
@@ -189,6 +206,7 @@ def main():
     random.seed(5)
     np.random.seed(25)
     num_customers = 50
+    print("This instance has " + str(num_customers) + " customers.")
     VRP_instance = Instance_Generator(num_customers)
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows
@@ -221,20 +239,26 @@ def main():
     # Environment wrapper Custom Vectorized Dummy Environment
     # env = DummyVecEnv([lambda: env, lambda:env_2])
 
+    # env = DummyVecEnv([lambda: env])
+    # env = VecNormalize(env, norm_obs=True, norm_reward=True)
+
     # Wrap the DummyVecEnv
     # env = VecExtractDictObs(env, key="observation")
 
     env = ActionMasker(env, mask_fn)  # Maskable environment
-    model = MaskablePPO(MaskableActorCriticPolicy, env, verbose=1)
+    model = MaskablePPO(MaskableActorCriticPolicy, env, verbose=1, normalize_advantage=True)
 
     # model = PPO("MlpPolicy", env, verbose=1)
-    model.learn(total_timesteps=1000, log_interval=1)
+    model.learn(total_timesteps=100, log_interval=1)
     # model = MaskablePPO.load("PPO maskable RL agent")
 
     vec_env = model.get_env()
+    #vec_env = DummyVecEnv([lambda: env])
+
     print(evaluate_policy(model, vec_env, deterministic=True))
     obs = vec_env.reset()
-    for i in range(5):
+    label = []
+    for i in range(10):
         action_mask = env.unwrapped.valid_action_mask()  # vec_env.env_method("valid_action_mask")
 
         action, _state = model.predict(obs, action_masks=action_mask, deterministic=True)
@@ -242,6 +266,12 @@ def main():
         # print(model.policy.get_distribution(torch.from_numpy(obs)).distribution.probs)
         obs, reward, done, info = vec_env.step(action)
         print(env.unwrapped.current_label)
+
+        label.append(int(action))
+        if done:
+            print("The real reward is: " + str(env.unwrapped.calculate_real_reward(label)))
+            label = []
+
         # print(vec_env.get_attr("current_label"))
 
         # vec_env.render("human")

@@ -39,12 +39,14 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
     # Iterate until optimality is reached
     while True:
         master_problem.solve()
+        # print("The objective value is: "+str(master_problem.model.objval))
         duals = master_problem.retain_duals()
         time_11 = time.time()
         subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit,
                                 duals, service_times, forbidden_edges)
         ordered_route, reduced_cost = subproblem.solve()
         time_22 = time.time()
+        top_labels = sorted(subproblem.top_labels, key=lambda x: x[1])[1:]
         print("RC is " + str(reduced_cost))
         print("Total solving time for PP is: " + str(time_22 - time_11))
         print(ordered_route)
@@ -55,6 +57,13 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
             # Add the column to the master problem
             master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
             added_orders.append(ordered_route)
+            for x in range(len(top_labels)):
+                label = top_labels[x][0]
+                if label not in added_orders:
+                    cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
+                    route = convert_ordered_route(label, num_customers)
+                    master_problem.add_columns([route], [cost], [label], forbidden_edges, compelled_edges)
+                    added_orders.append(label)
         else:
             # Optimality has been reached
             print("Addition Failed")
@@ -63,7 +72,6 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
     sol, obj = master_problem.extract_solution()
     routes, costs, orders = master_problem.extract_columns()
     return sol, obj, routes, costs, orders
-
 
 def initialize_columns(num_customers, truck_capacity, time_matrix, service_times, time_windows, demands):
     unvisited_customers = list(range(1, num_customers + 1))
@@ -137,13 +145,13 @@ def check_route_feasibility(route, dist_matrix_data, time_windows, service_times
 
     for i in range(1, len(route)):
         if current_time > time_windows[route[i], 1]:
-            #print("Time Window violated")
-            #print(route[i])
+            # print("Time Window violated")
+            # print(route[i])
             return False
         current_time += service_times[route[i]]
         total_capacity += demands_data[route[i]]
         if total_capacity > truck_capacity:
-            #print("Truck Capacity Violated")
+            # print("Truck Capacity Violated")
             return False
         if i < len(route) - 1:
             # travel to next node
@@ -251,6 +259,8 @@ class Subproblem:
         self.time_limit = time_limit
         self.service_times = service_times
         self.forbidden_edges = forbidden_edges
+        self.top_labels = []
+        self.max_column_count = 10
 
         duals.insert(0, 0)
         duals = np.array(duals)
@@ -272,7 +282,6 @@ class Subproblem:
 
         for inc in range(self.no_of_increments, 4, -1):
             threads = []
-            #print(inc)
             for cus in range(1, self.num_customers + 1):
                 start_point = cus
                 current_label = [cus]
@@ -282,10 +291,11 @@ class Subproblem:
                 current_time = self.time_windows[0, 1] - (self.no_of_increments - inc + 1) * increment
                 current_price = 0
                 best_bound = math.inf
+                solve = False
                 thread = Bound_Threader(target=self.bound_calculator, args=(start_point, current_label,
                                                                             unvisited_customers, remaining_capacity,
                                                                             current_time, current_price,
-                                                                            best_bound))
+                                                                            best_bound, solve))
                 thread.start()
                 threads.append(thread)
 
@@ -293,14 +303,23 @@ class Subproblem:
                 label, lower_bound = thread.join()
                 self.bounds[index, inc - 1] = lower_bound
                 self.supreme_labels[index + 1, inc] = label
+            # print(inc)
 
     def bound_calculator(self, start_point, current_label, unvisited_customers,
-                         remaining_capacity, current_time, current_price, best_bound):
+                         remaining_capacity, current_time, current_price, best_bound, solve):
 
         if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0:
             return [], math.inf
 
         if start_point == 0 and len(current_label) > 1:
+            if solve and current_price < 0:
+                if len(self.top_labels) < self.max_column_count:
+                    self.top_labels.append((current_label, current_price))
+                else:
+                    self.top_labels = sorted(self.top_labels, key=lambda x: x[1])
+                    if current_price < self.top_labels[-1][1]:
+                        self.top_labels.pop()
+                        self.top_labels.append((current_label, current_price))
             return current_label, current_price
 
         waiting_time = max(self.time_windows[start_point, 0] - current_time, 0)
@@ -311,7 +330,6 @@ class Subproblem:
         if 0 < inc <= self.no_of_increments:
             if self.bounds[start_point - 1, inc - 1] < math.inf:
                 bound_estimate = current_price + self.bounds[start_point - 1, inc - 1]
-                pro_route = current_label[:-1] + self.supreme_labels[start_point, inc]
                 if bound_estimate > best_bound:
                     return [], math.inf
 
@@ -345,7 +363,7 @@ class Subproblem:
                         CT = math.inf
 
                 label, lower_bound = self.bound_calculator(j, copy_label, copy_unvisited, RC, CT, CP,
-                                                           best_bound)
+                                                           best_bound, solve)
                 if lower_bound < best_bound:
                     best_bound = lower_bound
                     best_label = label
@@ -396,9 +414,10 @@ class Subproblem:
         current_time = 0
         current_price = 0
         best_bound = math.inf
+        solve = True
         best_route, best_cost = self.bound_calculator(start_point, current_label, unvisited_customers,
                                                       remaining_capacity, current_time, current_price,
-                                                      best_bound)
+                                                      best_bound, solve)
         return best_route, best_cost
 
 
@@ -420,7 +439,8 @@ class Bound_Threader(Thread):
 def main():
     random.seed(5)
     np.random.seed(25)
-    num_customers = 15
+    num_customers = 25
+    print("This instance has " + str(num_customers) + " customers.")
     VRP_instance = Instance_Generator(num_customers)
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows
