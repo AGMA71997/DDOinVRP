@@ -439,7 +439,7 @@ class Bound_Threader(Thread):
 def main():
     random.seed(5)
     np.random.seed(25)
-    num_customers = 25
+    num_customers = 15
     print("This instance has " + str(num_customers) + " customers.")
     VRP_instance = Instance_Generator(num_customers)
     time_matrix = VRP_instance.time_matrix

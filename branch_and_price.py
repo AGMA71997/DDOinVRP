@@ -8,7 +8,6 @@ import random
 
 
 def generate_upper_bound(lb_sol, time_matrix, num_customers):
-
     if not lb_sol:
         return [], math.inf, []
 
@@ -42,7 +41,6 @@ def generate_upper_bound(lb_sol, time_matrix, num_customers):
 
 
 def determine_branching_rule(fractional_routes):
-
     edge_scores = {}
     for entry in fractional_routes:
         score = entry[0]
@@ -56,9 +54,7 @@ def determine_branching_rule(fractional_routes):
     edge_scores_list = [(edge, score) for edge, score in edge_scores.items() if edge_scores[edge] < 0.99]
     edge_scores_list.sort(key=lambda x: x[1], reverse=True)
 
-    print(edge_scores_list)
     return list(edge_scores_list[0][0])
-
 
 class Branch_and_Bound(object):
 
@@ -120,7 +116,7 @@ class Branch_and_Bound(object):
         time_2 = time.time()
         print("Optimal sol: " + str(optimal_sol))
         print("Optimal obj: " + str(optimal_obj))
-        print("Total routes generated: "+str(len(orders)))
+        print("Total routes generated: " + str(len(orders)))
         print("Total time: " + str(time_2 - time_1))
 
     ##consider compelled and forbidden edges to improve bound generation

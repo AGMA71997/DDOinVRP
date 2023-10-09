@@ -69,7 +69,7 @@ class ESPRCTW_Env(gym.Env):
         self.action_space = spaces.Discrete(num_customers + 1)
 
         # Example for using image as input:
-        self.observation_space = spaces.Box(low=0, high=255, shape=(num_customers + 1, 8), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=255, shape=(num_customers + 1, 6), dtype=np.float32)
 
     def calculate_price(self, duals):
         duals.insert(0, 0)
@@ -111,12 +111,12 @@ class ESPRCTW_Env(gym.Env):
         return self._next_observation(), {}
 
     def _next_observation(self):
-        obs = np.zeros((self.num_customers + 1, 8))
+        obs = np.zeros((self.num_customers + 1, 6))
 
         for i in range(len(obs)):
             obs[i, :] = [self.price[self.start_point, i], self.demands[i],
-                         max(self.time_windows[i, 0] - (self.current_time + self.time_matrix[self.start_point, i]), 0),
-                         self.time_matrix[self.start_point, i],
+                         self.time_matrix[self.start_point, i] +
+                         max(self.time_windows[i, 0] - (self.current_time + self.time_matrix[self.start_point, i]), 0) +
                          self.service_times[i],
                          self.average_price[i],
                          self.average_capacity[i],
@@ -130,7 +130,6 @@ class ESPRCTW_Env(gym.Env):
         self.current_time = max(self.current_time + self.time_matrix[self.start_point, action],
                                 self.time_windows[action, 0])
         self.current_time += self.service_times[action]
-        self.current_time = max(self.time_windows[action, 0], self.current_time)
         self.remaining_capacity -= self.demands[action]
         self.start_point = action
 
@@ -143,7 +142,6 @@ class ESPRCTW_Env(gym.Env):
         done = False
         if (self.current_label[-1] == 0 and len(self.current_label) > 2):
             done = True
-            self.current_step = 0
 
         obs = self._next_observation()
         truncated = done
@@ -233,8 +231,8 @@ def main():
     env = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals,
                       service_times, forbidden_edges)
 
-    # env_2 = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals_2,
-    # service_times, forbidden_edges)
+    env_2 = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals_2,
+                        service_times, forbidden_edges)
 
     # Environment wrapper Custom Vectorized Dummy Environment
     # env = DummyVecEnv([lambda: env, lambda:env_2])
@@ -246,19 +244,22 @@ def main():
     # env = VecExtractDictObs(env, key="observation")
 
     env = ActionMasker(env, mask_fn)  # Maskable environment
-    model = MaskablePPO(MaskableActorCriticPolicy, env, verbose=1, normalize_advantage=True)
+    env_2 = ActionMasker(env_2, mask_fn)
+    big_env = DummyVecEnv([lambda: env, lambda: env_2])
+    model = MaskablePPO(MaskableActorCriticPolicy, big_env, verbose=1, normalize_advantage=True)
 
     # model = PPO("MlpPolicy", env, verbose=1)
     model.learn(total_timesteps=100, log_interval=1)
     # model = MaskablePPO.load("PPO maskable RL agent")
+    print("Trained")
 
-    vec_env = model.get_env()
-    #vec_env = DummyVecEnv([lambda: env])
+    #vec_env = model.get_env()
+    vec_env = DummyVecEnv([lambda: env])
 
     print(evaluate_policy(model, vec_env, deterministic=True))
     obs = vec_env.reset()
     label = []
-    for i in range(10):
+    for i in range(5):
         action_mask = env.unwrapped.valid_action_mask()  # vec_env.env_method("valid_action_mask")
 
         action, _state = model.predict(obs, action_masks=action_mask, deterministic=True)
@@ -280,7 +281,7 @@ def main():
             obs = vec_env.reset()
 
     # model.save("PPO maskable RL agent")
-    env.unwrapped.calculate_price(duals_2)
+    #env.unwrapped.calculate_price(duals_2)
     # model.learn(total_timesteps=10000)
 
 
