@@ -253,7 +253,8 @@ def main():
     # model = MaskablePPO.load("PPO maskable RL agent")
     print("Trained")
 
-    #vec_env = model.get_env()
+    indices = [0, 1]
+    env = model.get_env()._get_target_envs(indices)[0]
     vec_env = DummyVecEnv([lambda: env])
 
     print(evaluate_policy(model, vec_env, deterministic=True))
@@ -281,7 +282,7 @@ def main():
             obs = vec_env.reset()
 
     # model.save("PPO maskable RL agent")
-    #env.unwrapped.calculate_price(duals_2)
+    # env.unwrapped.calculate_price(duals_2)
     # model.learn(total_timesteps=10000)
 
 

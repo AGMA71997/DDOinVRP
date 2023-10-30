@@ -8,7 +8,6 @@ import random
 import time
 from threading import Thread
 
-
 def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, time_windows, time_limit, num_customers,
                                         service_times, forbidden_edges, compelled_edges,
                                         initial_routes, initial_costs, initial_orders):
@@ -41,6 +40,7 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
         master_problem.solve()
         # print("The objective value is: "+str(master_problem.model.objval))
         duals = master_problem.retain_duals()
+        # Consider saving problem parameters here in pickle files for comparison.
         time_11 = time.time()
         subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit,
                                 duals, service_times, forbidden_edges)
@@ -59,11 +59,10 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
             added_orders.append(ordered_route)
             for x in range(len(top_labels)):
                 label = top_labels[x][0]
-                if label not in added_orders:
-                    cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
-                    route = convert_ordered_route(label, num_customers)
-                    master_problem.add_columns([route], [cost], [label], forbidden_edges, compelled_edges)
-                    added_orders.append(label)
+                cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
+                route = convert_ordered_route(label, num_customers)
+                master_problem.add_columns([route], [cost], [label], forbidden_edges, compelled_edges)
+                added_orders.append(label)
         else:
             # Optimality has been reached
             print("Addition Failed")
@@ -72,6 +71,7 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
     sol, obj = master_problem.extract_solution()
     routes, costs, orders = master_problem.extract_columns()
     return sol, obj, routes, costs, orders
+
 
 def initialize_columns(num_customers, truck_capacity, time_matrix, service_times, time_windows, demands):
     unvisited_customers = list(range(1, num_customers + 1))
@@ -312,7 +312,7 @@ class Subproblem:
             return [], math.inf
 
         if start_point == 0 and len(current_label) > 1:
-            if solve and current_price < 0:
+            if solve and current_price < -0.1:
                 if len(self.top_labels) < self.max_column_count:
                     self.top_labels.append((current_label, current_price))
                 else:
@@ -439,7 +439,7 @@ class Bound_Threader(Thread):
 def main():
     random.seed(5)
     np.random.seed(25)
-    num_customers = 15
+    num_customers = 20
     print("This instance has " + str(num_customers) + " customers.")
     VRP_instance = Instance_Generator(num_customers)
     time_matrix = VRP_instance.time_matrix
