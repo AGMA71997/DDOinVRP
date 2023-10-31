@@ -42,7 +42,7 @@ class ESPRCTW_Env(gym.Env):
     """Custom Environment that follows gym interface"""
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals,
+    def __init__(self, num_customers, vehicle_capacity, time_matrix, demands, time_windows, duals,
                  service_times, forbidden_edges):
         super(ESPRCTW_Env, self).__init__()
         self.num_customers = num_customers
@@ -50,7 +50,6 @@ class ESPRCTW_Env(gym.Env):
         self.time_matrix = time_matrix
         self.demands = demands
         self.time_windows = time_windows
-        self.time_limit = time_limit
         self.service_times = service_times
         self.forbidden_edges = forbidden_edges
         self.discount_factor = 1
@@ -210,7 +209,6 @@ def main():
     time_windows = VRP_instance.time_windows
     demands = VRP_instance.demands
     vehicle_capacity = VRP_instance.vehicle_capacity
-    time_limit = VRP_instance.time_limit
     service_times = VRP_instance.service_times
     forbidden_edges = []
     compelled_edges = []
@@ -228,10 +226,10 @@ def main():
     randis = np.random.uniform(low=0.5, high=2.5, size=len(duals))
     duals_2 = [duals[x] - randis[x] for x in range(len(duals))]
 
-    env = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals,
+    env = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, duals,
                       service_times, forbidden_edges)
 
-    env_2 = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals_2,
+    env_2 = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, duals_2,
                         service_times, forbidden_edges)
 
     # Environment wrapper Custom Vectorized Dummy Environment

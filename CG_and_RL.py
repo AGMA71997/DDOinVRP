@@ -50,17 +50,16 @@ def RL_solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demand
                       service_times, forbidden_edges)
     env = ActionMasker(env, mask_fn)
 
-
     if not solve:
         model = MaskablePPO(MaskableActorCriticPolicy, env, verbose=1)
     else:
-        model = MaskablePPO.load('RL solver for ESPRCTW -'+str(num_customers))
+        model = MaskablePPO.load('RL solver for ESPRCTW -' + str(num_customers))
         # pickle_in = open('RL solver for ESPRCTW -'+str(num_customers), 'rb')
         # pp_rl_solver = pickle.load(pickle_in)
 
     pp_rl_solver = ESPRCTW_RL_solver(env, model)
 
-    steps = 20000
+    steps = 1000
     # Iterate until optimality is reached
     while True:
         time_11 = time.time()
@@ -88,7 +87,7 @@ def RL_solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demand
             # Optimality has been reached
             print("Addition Failed")
             if not solve:
-                pp_rl_solver.model.save('RL solver for ESPRCTW -'+str(num_customers))
+                pp_rl_solver.model.save('RL solver for ESPRCTW -' + str(num_customers))
                 # pickle_out = open('RL solver for ESPRCTW -'+str(num_customers), 'wb')
                 # pickle.dump(pp_rl_solver, pickle_out)
                 # pickle_out.close()
@@ -101,15 +100,15 @@ def RL_solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demand
 
 class ESPRCTW_RL_solver(object):
     def __init__(self, env, model):
-        self.env = env #ActionMasker(env, mask_fn)
+        self.env = env  # ActionMasker(env, mask_fn)
 
-        self.model = model #MaskablePPO(MaskableActorCriticPolicy, self.env, verbose=1)
+        self.model = model  # MaskablePPO(MaskableActorCriticPolicy, self.env, verbose=1)
 
     def train(self, steps):
         self.model.learn(total_timesteps=steps, log_interval=1000)
 
     def evaluate(self):
-        vec_env = DummyVecEnv([lambda: self.env])  #self.model.get_env()
+        vec_env = DummyVecEnv([lambda: self.env])  # self.model.get_env()
         return evaluate_policy(self.model, vec_env, deterministic=True)
 
     def update_problem(self, num_customers, vehicle_capacity, time_matrix, demands, time_windows,
@@ -123,7 +122,7 @@ class ESPRCTW_RL_solver(object):
             column_number = 1
 
         label_dict = {}
-        vec_env = DummyVecEnv([lambda: self.env])  #self.model.get_env()
+        vec_env = DummyVecEnv([lambda: self.env])  # self.model.get_env()
         for i in range(1, column_number + 1):
             label = [0]
             obs = vec_env.reset()
@@ -143,7 +142,7 @@ class ESPRCTW_RL_solver(object):
 def main():
     random.seed(5)
     np.random.seed(25)
-    num_customers = 25
+    num_customers = 20
     print("This instance has " + str(num_customers) + " customers.")
     VRP_instance = Instance_Generator(num_customers)
     time_matrix = VRP_instance.time_matrix
@@ -158,7 +157,7 @@ def main():
     initial_costs = []
     initial_orders = []
     time_1 = time.time()
-    solve = True
+    solve = False
     sol, obj, routes, costs, orders = RL_solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands,
                                                                              time_windows, time_limit,
                                                                              num_customers, service_times,

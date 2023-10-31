@@ -93,8 +93,6 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
 
 def main():
-    random.seed(5)
-    np.random.seed(25)
     num_customers = 20
 
     coords_list = []

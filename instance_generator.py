@@ -9,7 +9,7 @@ class Instance_Generator(object):
         self.N = N
         self.coords = None
         self.time_matrix = self.create_time_matrix()
-        self.time_windows = self.create_time_windows(math.ceil(self.time_matrix[0, :].max()))
+        self.time_windows = self.create_time_windows()
         self.vehicle_capacity = 10
         self.demands = self.create_demands()
         self.time_limit = 1000
@@ -20,8 +20,6 @@ class Instance_Generator(object):
         time_matrix = numpy.zeros((self.N + 1, self.N + 1))
         customer_locations = numpy.random.random_sample((self.N + 1, 2))
         self.coords = customer_locations
-        customer_locations[0, 0] = 0
-        customer_locations[0, 1] = 0
 
         for i in range(self.N + 1):
             for j in range(self.N + 1):
@@ -30,7 +28,7 @@ class Instance_Generator(object):
 
         return time_matrix * 2
 
-    def create_time_windows(self, minimum_margin):
+    def create_time_windows(self, minimum_margin=2):
         time_windows = numpy.zeros((self.N + 1, 2))
         for i in range(self.N + 1):
             if i != 0:
