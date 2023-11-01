@@ -5,7 +5,7 @@ import time
 import sys
 import pickle
 
-from example_environments import ESPRCTW_Env, mask_fn
+from ESPRCTW_RL_solver import ESPRCTW_Env, mask_fn
 from stable_baselines3.common.vec_env import DummyVecEnv
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker

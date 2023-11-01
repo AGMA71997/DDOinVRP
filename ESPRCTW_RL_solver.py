@@ -1,20 +1,10 @@
 import gym
-# from gym import spaces
-import sys
-import torch
 import numpy as np
-import math
 
-import gymnasium
 from gymnasium import spaces
-from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvStepReturn, VecEnvWrapper
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
-from sb3_contrib.common.envs import InvalidActionEnvDiscrete
 from sb3_contrib.common.maskable.evaluation import evaluate_policy
-from sb3_contrib.common.maskable.distributions import make_masked_proba_distribution
-from sb3_contrib.common.maskable.utils import get_action_masks
 from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from sb3_contrib.ppo_mask import MaskablePPO
@@ -173,32 +163,6 @@ class ESPRCTW_Env(gym.Env):
         pass
 
 
-class VecExtractDictObs(VecEnvWrapper):  # Example environment from stable-baselines3.
-    """
-    A vectorized wrapper for filtering a specific key from dictionary observations.
-    Similar to Gym's FilterObservation wrapper:
-        https://github.com/openai/gym/blob/master/gym/wrappers/filter_observation.py
-
-    :param venv: The vectorized environment
-    :param key: The key of the dictionary observation
-    """
-
-    def __init__(self, venv: VecEnv, key: str):
-        self.key = key
-        super().__init__(venv=venv, observation_space=venv.observation_space.spaces[self.key])
-
-    def reset(self) -> np.ndarray:
-        obs = self.venv.reset()
-        return obs[self.key]
-
-    def step_async(self, actions: np.ndarray) -> None:
-        self.venv.step_async(actions)
-
-    def step_wait(self) -> VecEnvStepReturn:
-        obs, reward, done, info = self.venv.step_wait()
-        return obs[self.key], reward, done, info
-
-
 def main():
     random.seed(5)
     np.random.seed(25)
@@ -220,9 +184,6 @@ def main():
     master_problem.solve()
     duals = master_problem.retain_duals()
 
-    # Example deployment of environment with stable baseline
-    # env = gym.make("CartPole-v1", render_mode="rgb_array")  # Random registered environment
-
     randis = np.random.uniform(low=0.5, high=2.5, size=len(duals))
     duals_2 = [duals[x] - randis[x] for x in range(len(duals))]
 
@@ -232,27 +193,22 @@ def main():
     env_2 = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, duals_2,
                         service_times, forbidden_edges)
 
-    # Environment wrapper Custom Vectorized Dummy Environment
-    # env = DummyVecEnv([lambda: env, lambda:env_2])
-
-    # env = DummyVecEnv([lambda: env])
+    # Environment wrapper Custom Vectorized Normalized Environment
     # env = VecNormalize(env, norm_obs=True, norm_reward=True)
-
-    # Wrap the DummyVecEnv
-    # env = VecExtractDictObs(env, key="observation")
 
     env = ActionMasker(env, mask_fn)  # Maskable environment
     env_2 = ActionMasker(env_2, mask_fn)
     big_env = DummyVecEnv([lambda: env, lambda: env_2])
+
+    # model = MaskablePPO.load("PPO maskable RL agent")
     model = MaskablePPO(MaskableActorCriticPolicy, big_env, verbose=1, normalize_advantage=True)
 
-    # model = PPO("MlpPolicy", env, verbose=1)
     model.learn(total_timesteps=100, log_interval=1)
-    # model = MaskablePPO.load("PPO maskable RL agent")
     print("Trained")
 
     indices = [0, 1]
     env = model.get_env()._get_target_envs(indices)[0]
+    print(type(env))
     vec_env = DummyVecEnv([lambda: env])
 
     print(evaluate_policy(model, vec_env, deterministic=True))
@@ -268,20 +224,13 @@ def main():
         print(env.unwrapped.current_label)
 
         label.append(int(action))
+        # VecEnv resets automatically
         if done:
             print("The real reward is: " + str(env.unwrapped.calculate_real_reward(label)))
             label = []
-
-        # print(vec_env.get_attr("current_label"))
-
-        # vec_env.render("human")
-        # VecEnv resets automatically
-        if done:
             obs = vec_env.reset()
 
     # model.save("PPO maskable RL agent")
-    # env.unwrapped.calculate_price(duals_2)
-    # model.learn(total_timesteps=10000)
 
 
 if __name__ == "__main__":
