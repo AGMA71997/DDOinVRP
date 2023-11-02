@@ -103,7 +103,7 @@ def main():
     duals_list = []
     service_times_list = []
 
-    for x in range(50):
+    for x in range(1):
         VRP_instance = Instance_Generator(num_customers)
 
         forbidden_edges = []
@@ -129,7 +129,7 @@ def main():
         print("objective: " + str(obj))
         print("number of columns: " + str(len(orders)))
 
-    pickle_out = open('CVRPTW_data_' + str(num_customers), 'wb')
+    pickle_out = open('CVRPTW_data_' + str(num_customers)+"_"+str(time_2), 'wb')
     pickle.dump([coords_list, time_matrix_list, time_windows_list, demands_list, service_times_list,
                  vehicle_capacity_list, duals_list], pickle_out)
     pickle_out.close()
