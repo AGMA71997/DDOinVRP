@@ -14,6 +14,13 @@ from instance_generator import Instance_Generator
 from column_generation import MasterProblem, initialize_columns
 
 
+def make_env(i, envs_list):
+    def _init():
+        return envs_list[i]
+
+    return _init
+
+
 def mask_fn(env):
     # Do whatever you'd like in this function to return the action mask
     # for the current env. In this example, we assume the env has a
@@ -61,6 +68,7 @@ class ESPRCTW_Env(gym.Env):
         self.observation_space = spaces.Box(low=0, high=255, shape=(num_customers + 1, 6), dtype=np.float32)
 
     def calculate_price(self, duals):
+        duals = duals.copy()
         duals.insert(0, 0)
         duals = np.array(duals)
         duals = duals.reshape((len(duals), 1))
@@ -69,9 +77,9 @@ class ESPRCTW_Env(gym.Env):
     def calculate_real_reward(self, label):
         return sum(self.original_price[label[i], label[i + 1]] for i in range(len(label) - 1))
 
-    def update_instance(self, num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals,
+    def update_instance(self, num_customers, vehicle_capacity, time_matrix, demands, time_windows, duals,
                         service_times, forbidden_edges):
-        self.__init__(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit, duals,
+        self.__init__(num_customers, vehicle_capacity, time_matrix, demands, time_windows, duals,
                       service_times, forbidden_edges)
 
     def determine_nearest_customers(self):
@@ -166,7 +174,8 @@ class ESPRCTW_Env(gym.Env):
 def main():
     random.seed(5)
     np.random.seed(25)
-    num_customers = 50
+    num_customers = 10
+
     print("This instance has " + str(num_customers) + " customers.")
     VRP_instance = Instance_Generator(num_customers)
     time_matrix = VRP_instance.time_matrix
@@ -174,6 +183,7 @@ def main():
     demands = VRP_instance.demands
     vehicle_capacity = VRP_instance.vehicle_capacity
     service_times = VRP_instance.service_times
+
     forbidden_edges = []
     compelled_edges = []
 
@@ -184,32 +194,51 @@ def main():
     master_problem.solve()
     duals = master_problem.retain_duals()
 
-    randis = np.random.uniform(low=0.5, high=2.5, size=len(duals))
-    duals_2 = [duals[x] - randis[x] for x in range(len(duals))]
-
-    env = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, duals,
-                      service_times, forbidden_edges)
-
-    env_2 = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, duals_2,
-                        service_times, forbidden_edges)
-
     # Environment wrapper Custom Vectorized Normalized Environment
     # env = VecNormalize(env, norm_obs=True, norm_reward=True)
 
+    env = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, duals,
+                      service_times, forbidden_edges)
     env = ActionMasker(env, mask_fn)  # Maskable environment
-    env_2 = ActionMasker(env_2, mask_fn)
-    big_env = DummyVecEnv([lambda: env, lambda: env_2])
+
+    randis = np.random.uniform(low=0.5, high=2.5, size=len(duals))
+    duals_2 = [duals[x] - randis[x] for x in range(len(duals))]
+
+    env_2 = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, duals_2,
+                        service_times, forbidden_edges)
+    env_2 = ActionMasker(env_2, mask_fn)  # Maskable environment
+
+    envs_list = [env, env_2]
+
+    big_env = DummyVecEnv([make_env(i, envs_list) for i in range(len(envs_list))])
+
+    randis = np.random.uniform(low=0.5, high=2.5, size=len(duals))
+    duals_3 = [duals[x] - randis[x] for x in range(len(duals))]
+
+    env_3 = ESPRCTW_Env(num_customers, vehicle_capacity, time_matrix, demands, time_windows, duals_3,
+                        service_times, forbidden_edges)
+    env_3 = ActionMasker(env_3, mask_fn)
+
+    envs_list_2 = [env_2, env_3]
+
+    big_env_2 = DummyVecEnv([make_env(i, envs_list) for i in range(len(envs_list_2))])
 
     # model = MaskablePPO.load("PPO maskable RL agent")
     model = MaskablePPO(MaskableActorCriticPolicy, big_env, verbose=1, normalize_advantage=True)
 
-    model.learn(total_timesteps=100, log_interval=1)
+    indices = list(range(1))
+    envs = model.get_env()._get_target_envs(indices)
+    for env in envs:
+        pass
+
+    model.learn(total_timesteps=1000, log_interval=1)
     print("Trained")
 
-    indices = [0, 1]
-    env = model.get_env()._get_target_envs(indices)[0]
-    print(type(env))
-    vec_env = DummyVecEnv([lambda: env])
+    model.set_env(big_env_2)
+    model.learn(total_timesteps=1000, log_interval=1)
+    print("Trained Again")
+
+    vec_env = DummyVecEnv([lambda: envs[0]])
 
     print(evaluate_policy(model, vec_env, deterministic=True))
     obs = vec_env.reset()

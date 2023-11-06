@@ -2,12 +2,10 @@ from column_generation import *
 
 import sys
 
-import numpy as np
 from instance_generator import Instance_Generator
-import random
 import time
 import pickle
-
+import os
 
 def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
                          initial_routes, initial_costs, initial_orders, coords_list, time_matrix_list,
@@ -129,6 +127,7 @@ def main():
         print("objective: " + str(obj))
         print("number of columns: " + str(len(orders)))
 
+    os.chdir("/gpfs/home6/abdoab/DDOinVRP/Data/")
     pickle_out = open('CVRPTW_data_' + str(num_customers)+"_"+str(time_2), 'wb')
     pickle.dump([coords_list, time_matrix_list, time_windows_list, demands_list, service_times_list,
                  vehicle_capacity_list, duals_list], pickle_out)
