@@ -1,6 +1,6 @@
 import time
 import column_generation as cg
-import CG_and_RL as cgrl
+import ESPRCTW_RL_solver as cgrl
 from branch_and_price import generate_upper_bound, determine_branching_rule
 from instance_generator import Instance_Generator
 import sys
