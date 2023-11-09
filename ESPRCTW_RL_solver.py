@@ -1,3 +1,5 @@
+import os
+
 from instance_generator import Instance_Generator
 from column_generation import initialize_columns, check_route_feasibility, create_forbidden_edges_list
 from column_generation import MasterProblem, convert_ordered_route
@@ -6,18 +8,18 @@ import sys
 
 from ESPRCTW_RL_trainer import ESPRCTW_Env, mask_fn
 from stable_baselines3.common.vec_env import DummyVecEnv
-from sb3_contrib.common.maskable.policies import MaskableActorCriticPolicy
 from sb3_contrib.common.wrappers import ActionMasker
 from sb3_contrib.ppo_mask import MaskablePPO
 from sb3_contrib.common.maskable.evaluation import evaluate_policy
 
+import json
 import random
 import numpy as np
 
 
-def RL_solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, time_windows, time_limit,
+def RL_solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, time_windows,
                                            num_customers, service_times, forbidden_edges, compelled_edges,
-                                           initial_routes, initial_costs, initial_orders):
+                                           initial_routes, initial_costs, initial_orders, config):
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
 
@@ -42,9 +44,8 @@ def RL_solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demand
 
     added_orders = initial_orders
 
-    model = MaskablePPO.load('RL solver for ESPRCTW -' + str(num_customers))
-    # pickle_in = open('RL solver for ESPRCTW -'+str(num_customers), 'rb')
-    # pp_rl_solver = pickle.load(pickle_in)
+    os.chdir(config["Saved SB3 Model"])
+    model = MaskablePPO.load('ESPRCTW_Solver_20_30')
 
     # Iterate until optimality is reached
     while True:
@@ -54,15 +55,9 @@ def RL_solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demand
                           service_times, forbidden_edges)
         env = ActionMasker(env, mask_fn)
 
-        try:
-            pp_rl_solver = ESPRCTW_RL_solver(env, model)
-        except:
-            print("UNDETECTED")
-            # model = MaskablePPO(MaskableActorCriticPolicy, env, verbose=1)
-            # pp_rl_solver = ESPRCTW_RL_solver(env, model)
-
-        # pp_rl_solver.train(1000)
+        pp_rl_solver = ESPRCTW_RL_solver(env, model)
         time_11 = time.time()
+
         column_dict = pp_rl_solver.generate_columns(10)
         ordered_route, reduced_cost = column_dict[1]
         del column_dict[1]
@@ -92,7 +87,7 @@ def RL_solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demand
             print("Addition Failed")
             break
 
-    model.save('RL solver for ESPRCTW -' + str(num_customers))
+    # model.save('RL solver for ESPRCTW -' + str(num_customers))
     sol, obj = master_problem.extract_solution()
     routes, costs, orders = master_problem.extract_columns()
     return sol, obj, routes, costs, orders
@@ -131,6 +126,10 @@ class ESPRCTW_RL_solver(object):
 
 
 def main():
+    file = "config.json"
+    with open(file, 'r') as f:
+        config = json.load(f)
+
     random.seed(5)
     np.random.seed(25)
     num_customers = 20
@@ -149,12 +148,12 @@ def main():
     initial_orders = []
     time_1 = time.time()
     sol, obj, routes, costs, orders = RL_solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands,
-                                                                             time_windows, time_limit,
+                                                                             time_windows,
                                                                              num_customers, service_times,
                                                                              forbidden_edges,
                                                                              compelled_edges,
                                                                              initial_routes, initial_costs,
-                                                                             initial_orders)
+                                                                             initial_orders,config)
     time_2 = time.time()
 
     print("time: " + str(time_2 - time_1))

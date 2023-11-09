@@ -1,11 +1,13 @@
 from column_generation import *
 
 import sys
+import json
 
 from instance_generator import Instance_Generator
 import time
 import pickle
 import os
+
 
 def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
                          initial_routes, initial_costs, initial_orders, coords_list, time_matrix_list,
@@ -93,6 +95,10 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 def main():
     num_customers = 20
 
+    file = "config.json"
+    with open(file, 'r') as f:
+        config = json.load(f)
+
     coords_list = []
     demands_list = []
     time_matrix_list = []
@@ -127,8 +133,8 @@ def main():
         print("objective: " + str(obj))
         print("number of columns: " + str(len(orders)))
 
-    os.chdir("/gpfs/home6/abdoab/DDOinVRP/Data/")
-    pickle_out = open('CVRPTW_data_' + str(num_customers)+"_"+str(time_2), 'wb')
+    os.chdir(config["storge_directory_raw"])
+    pickle_out = open('SAMPLE_ESPRCTW_instances_' + str(num_customers) + "_" + str(time_2), 'wb')
     pickle.dump([coords_list, time_matrix_list, time_windows_list, demands_list, service_times_list,
                  vehicle_capacity_list, duals_list], pickle_out)
     pickle_out.close()

@@ -2,9 +2,18 @@ import pickle
 import os
 import numpy
 import torch
+import json
 
 
-def data_iterator(directory, POMO):
+def create_price(time_matrix, duals):
+    duals = duals.copy()
+    duals = numpy.array(duals)
+    duals = duals.reshape((len(duals), 1))
+    return (time_matrix - duals) * -1
+
+
+def data_iterator(config, POMO):
+    directory = config["storge_directory_raw"]
     CL, TML, TWL, DL, STL, VCL, DUL = [], [], [], [], [], [], []
     data_count = 0
     for filename in os.listdir(directory):
@@ -21,30 +30,35 @@ def data_iterator(directory, POMO):
         DUL += dul
     print(data_count)
 
-    num_customers = len(CL[0])-1
+    num_customers = len(CL[0]) - 1
     if POMO:
-        process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers)
+        process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config)
     else:
-        os.chdir("Processed_Data_for_SB3")
+        os.chdir(config['SB3 Data'])
         pickle_out = open('ESPRCTW_Data' + str(num_customers), 'wb')
         pickle.dump([TML, TWL, DL, STL, VCL, DUL], pickle_out)
         pickle_out.close()
 
 
-def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers):
+def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config):
     depot_CL = []
     depot_TW = []
+    PL = []
     for x in range(len(CL)):
         depot_CL.append(CL[x][0, :])
         tw_scaler = TWL[x][0, 1]
-        depot_TW.append(TWL[x][0, :] )#/ tw_scaler)
+        depot_TW.append(TWL[x][0, :] / tw_scaler)
+        PL.append(create_price(TML[x], DUL[x]))
 
         CL[x] = numpy.delete(CL[x], 0, 0)
-        TWL[x] = numpy.delete(TWL[x], 0, 0) #/ tw_scaler
+        TWL[x] = numpy.delete(TWL[x], 0, 0) / tw_scaler
         TML[x] = TML[x] / tw_scaler
-        DL[x] = numpy.delete(DL[x], 0, 0) #/ VCL[x]
-        STL[x] = numpy.delete(STL[x], 0, 0) #/ tw_scaler
-        DUL[x] = numpy.delete(DUL[x], 0, 0) #/ max(DUL[x])
+        DL[x] = numpy.delete(DL[x], 0, 0) / VCL[x]
+        STL[x] = numpy.delete(STL[x], 0, 0) / tw_scaler
+        DUL[x] = numpy.delete(DUL[x], 0, 0) / max(DUL[x])
+        min_val = numpy.min(PL[x])
+        max_val = numpy.max(PL[x])
+        PL[x] = (PL[x] - min_val) / (max_val - min_val)
 
     depot_CL = torch.tensor(depot_CL, dtype=torch.float32)
     depot_TW = torch.tensor(depot_TW, dtype=torch.float32)
@@ -54,6 +68,7 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers):
     DL = torch.tensor(DL, dtype=torch.float32)
     STL = torch.tensor(STL, dtype=torch.float32)
     DUL = torch.tensor(DUL, dtype=torch.float32)
+    PL = torch.tensor(PL, dtype=torch.float32)
 
     depot_CL = depot_CL[:, None, :].expand(-1, 1, -1)
     depot_TW = depot_TW[:, None, :].expand(-1, 1, -1)
@@ -64,15 +79,21 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers):
             'depot_time_window': depot_TW,
             'duals': DUL,
             'service_times': STL,
-            'travel_times': TML}
+            'travel_times': TML,
+            'prices': PL}
 
-    os.chdir("Processed_Data_for_POMO")
+    os.chdir(config["POMO Data"])
     torch.save(dict, 'ESPRCTW_Data_' + str(num_customers))
 
 
 def main():
     POMO = True
-    data_iterator("CVRPTW data", POMO)
+
+    file = "config.json"
+    with open(file, 'r') as f:
+        config = json.load(f)
+
+    data_iterator(config, POMO)
 
 
 if __name__ == "__main__":
