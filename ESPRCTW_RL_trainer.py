@@ -13,12 +13,19 @@ from sb3_contrib.ppo_mask import MaskablePPO
 import pickle
 
 
-
 def make_env(i, envs_list):
     def _init():
         return envs_list[i]
 
     return _init
+
+
+def calculate_price(time_matrix, duals):
+    duals = duals.copy()
+    duals.insert(0, 0)
+    duals = np.array(duals)
+    duals = duals.reshape((len(duals), 1))
+    return (np.copy(time_matrix) - duals) * -1
 
 
 def mask_fn(env):
@@ -41,21 +48,30 @@ class ESPRCTW_Env(gym.Env):
     def __init__(self, num_customers, vehicle_capacity, time_matrix, demands, time_windows, duals,
                  service_times, forbidden_edges):
         super(ESPRCTW_Env, self).__init__()
-        self.num_customers = num_customers
-        self.vehicle_capacity = vehicle_capacity
-        self.time_matrix = time_matrix
-        self.demands = demands
-        self.time_windows = time_windows
-        self.service_times = service_times
-        self.forbidden_edges = forbidden_edges
-        self.edge_performance = {}
-        # self.discount_factor = 1
 
-        self.price = self.calculate_price(duals)
+        tw_scalar = time_windows[0, 1]
+        self.price = calculate_price(time_matrix, duals)
         self.original_price = np.copy(self.price)
         # self.price = standardize(self.price)
 
-        self.best_reward = 0
+        self.num_customers = num_customers
+        self.vehicle_capacity = 1
+        self.time_matrix = time_matrix / tw_scalar
+        self.demands = demands / vehicle_capacity
+        self.time_windows = time_windows / tw_scalar
+        self.service_times = service_times / tw_scalar
+        self.forbidden_edges = forbidden_edges
+        self.edge_performance = {}
+
+        self.current_time = None
+        self.current_step = None
+        self.current_price = None
+        self.start_point = None
+        self.current_label = None
+        self.remaining_capacity = self.vehicle_capacity
+        self.mask = None
+
+        #self.best_reward = 0
         self.K = min(max(5, int(num_customers / 10)), 20)
 
         # Define action and observation space
@@ -64,14 +80,7 @@ class ESPRCTW_Env(gym.Env):
         self.action_space = spaces.Discrete(num_customers + 1)
 
         # Example for using image as input:
-        self.observation_space = spaces.Box(low=0, high=255, shape=(num_customers + 1, 11), dtype=np.float32)
-
-    def calculate_price(self, duals):
-        duals = duals.copy()
-        duals.insert(0, 0)
-        duals = np.array(duals)
-        duals = duals.reshape((len(duals), 1))
-        return (self.time_matrix - duals) * -1
+        self.observation_space = spaces.Box(low=0, high=255, shape=(num_customers + 2, 3), dtype=np.float32)
 
     def calculate_real_reward(self, label):
         return sum(self.original_price[label[i], label[i + 1]] for i in range(len(label) - 1))
@@ -80,16 +89,16 @@ class ESPRCTW_Env(gym.Env):
         average_price = np.zeros((self.num_customers + 1))
         average_capacity = np.zeros((self.num_customers + 1))
         average_time = np.zeros(self.num_customers + 1)
-        feasible_actions = self.valid_action_mask()
         for i in range(len(average_capacity)):
-            nearest_customers = np.argsort(self.time_matrix[i, :].copy())[:self.K]
-            average_price[i] = sum(self.price[i, int(x)] for x in nearest_customers if
-                                   (feasible_actions[x] and (i, int(x)) not in self.forbidden_edges)) / self.K
-            average_capacity[i] = sum(self.demands[int(x)] for x in nearest_customers if
-                                      (feasible_actions[x] and (i, int(x)) not in self.forbidden_edges)) / self.K
-            average_time[i] = sum(
-                self.time_matrix[i, int(x)] for x in nearest_customers if
-                (feasible_actions[x] and (i, int(x)) not in self.forbidden_edges)) / self.K
+            if self.mask[i]:
+                nearest_customers = np.argsort(self.time_matrix[i, :].copy())[:self.K]
+                average_price[i] = sum(self.price[i, int(x)] for x in nearest_customers if
+                                       (self.mask[x] and (i, int(x)) not in self.forbidden_edges)) / self.K
+                average_capacity[i] = sum(self.demands[int(x)] for x in nearest_customers if
+                                          (self.mask[x] and (i, int(x)) not in self.forbidden_edges)) / self.K
+                average_time[i] = sum(
+                    self.time_matrix[i, int(x)] for x in nearest_customers if
+                    (self.mask[x] and (i, int(x)) not in self.forbidden_edges)) / self.K
 
         return average_price, average_capacity, average_time
 
@@ -105,26 +114,23 @@ class ESPRCTW_Env(gym.Env):
         return self._next_observation(), {}
 
     def _next_observation(self):
-        obs = np.zeros((self.num_customers + 1, 11))
+        obs = np.zeros((self.num_customers + 2, 3))
+        self.mask = self.valid_action_mask()
         average_price, average_capacity, average_time = self.determine_nearest_customers()
-        for i in range(len(obs)):
-            if (self.start_point, i, len(self.current_label)) in self.edge_performance:
-                count, avg_edge_gain = self.edge_performance[self.start_point, i, len(self.current_label)]
-            else:
-                avg_edge_gain = 0
+        for i in range(len(obs) - 1):
+            if self.mask[i]:
+                if (self.start_point, i, len(self.current_label)) in self.edge_performance:
+                    count = self.edge_performance[self.start_point, i, len(self.current_label)]
+                else:
+                    count = 0
 
-            obs[i, :] = [self.price[self.start_point, i], self.demands[i] / self.vehicle_capacity,
-                         (self.time_matrix[self.start_point, i] +
-                          max(self.time_windows[i, 0] - (self.current_time + self.time_matrix[self.start_point, i]),
-                              0) +
-                          self.service_times[i]) / self.time_windows[0, 1],
-                         average_price[i], average_capacity[i] / self.vehicle_capacity,
-                         average_time[i] / self.time_windows[0, 1], len(self.current_label),
-                         self.remaining_capacity / self.vehicle_capacity,
-                         (self.time_windows[0, 1] - self.current_time) / self.time_windows[0, 1],
-                         self.time_matrix[i, 0] / self.time_windows[0, 1],
-                         avg_edge_gain]
+                obs[i, :] = [self.price[self.start_point, i], self.demands[i],
+                             (self.time_matrix[self.start_point, i] +
+                              max(self.time_windows[i, 0] - (self.current_time + self.time_matrix[self.start_point, i]),
+                                  0) +
+                              self.service_times[i])]
 
+        obs[-1, :] = [self.current_price, 1 - self.remaining_capacity, 1-self.current_time]
         return obs
 
     def _take_action(self, action):
@@ -143,7 +149,7 @@ class ESPRCTW_Env(gym.Env):
 
         self.current_step += 1
         done = False
-        if (self.current_label[-1] == 0 and len(self.current_label) > 2):
+        if self.current_label[-1] == 0 and len(self.current_label) > 2:
             done = True
 
         obs = self._next_observation()
@@ -152,20 +158,6 @@ class ESPRCTW_Env(gym.Env):
             reward = 0
         else:
             reward = self.current_price
-
-            if reward > self.best_reward:
-                self.best_reward = reward
-
-            for x in range(len(self.current_label) - 1):
-                key = (self.current_label[x], self.current_label[x + 1], x + 1)
-                if key not in self.edge_performance:
-                    self.edge_performance[key] = [0, 0]
-                count, avg = self.edge_performance[key]
-                reward_sum = avg * count
-                reward_sum += reward
-                count += 1
-                avg = reward_sum / count
-                self.edge_performance[key] = count, avg
 
         return obs, reward, done, truncated, {}
 
@@ -181,7 +173,10 @@ class ESPRCTW_Env(gym.Env):
                     [self.start_point, i] in self.forbidden_edges):
                 feasible_actions[i] = False
 
-        feasible_actions[0] = True
+        if self.start_point != 0:
+            feasible_actions[0] = True
+        else:
+            feasible_actions[0] = False
         return feasible_actions
 
     def render(self, mode='human', close=False):
@@ -191,7 +186,7 @@ class ESPRCTW_Env(gym.Env):
 
 class ESPRCTW_RL_trainer(object):
 
-    def __init__(self, no_of_epochs, number_of_steps, no_of_envs, load_data, num_customers,config):
+    def __init__(self, no_of_epochs, number_of_steps, no_of_envs, load_data, num_customers, config):
         self.data_index = None
         self.model = None
         self.config = config
@@ -252,11 +247,11 @@ def main():
         config = json.load(f)
 
     num_customers = 20
-    no_of_epochs = 2
+    no_of_epochs = 30
     no_of_steps = num_customers * 500
     no_of_envs = 10
     load_data = True
-    trainer = ESPRCTW_RL_trainer(no_of_epochs, no_of_steps, no_of_envs, load_data, num_customers,config)
+    trainer = ESPRCTW_RL_trainer(no_of_epochs, no_of_steps, no_of_envs, load_data, num_customers, config)
     trainer.run()
 
 

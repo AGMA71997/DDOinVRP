@@ -139,7 +139,6 @@ def main():
     time_windows = VRP_instance.time_windows
     demands = VRP_instance.demands
     vehicle_capacity = VRP_instance.vehicle_capacity
-    time_limit = VRP_instance.time_limit
     service_times = VRP_instance.service_times
     forbidden_edges = []
     compelled_edges = []

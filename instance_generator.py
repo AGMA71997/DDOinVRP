@@ -1,32 +1,75 @@
 import numpy
 import random
-import math
+import os
+import json
 
 
 class Instance_Generator(object):
 
-    def __init__(self, N):
-        self.N = N
-        self.coords = None
-        self.time_matrix = self.create_time_matrix()
-        self.time_windows = self.create_time_windows()
-        self.vehicle_capacity = 10
-        self.demands = self.create_demands()
-        self.time_limit = 1000
-        self.service_times = self.create_service_times()
+    def __init__(self, file_path=None, config=None, N=None):
 
-    def create_time_matrix(self):
+        if file_path is None:
+            self.N = N
+            assert N is not None
+            self.coords = None
+            self.time_matrix = self.create_time_matrix()
+            self.time_windows = self.create_time_windows()
+            self.vehicle_capacity = 10
+            self.demands = self.create_demands()
+            self.service_times = self.create_service_times()
+        else:
+            self.generate_instance(file_path, config)
+
+    def generate_instance(self, file_path, config=None, instance_type="Solomon"):
+
+        if instance_type == "Solomon":
+            VC_dict = {}
+            with open(config["Solomon Dataset"] + "/capacities.txt") as f:
+                contents = f.readlines()
+
+            for item in contents:
+                string_list = item.split(":")
+                key = string_list[0] + string_list[1][0]
+                value = string_list[2].replace(r'\n', '')
+                VC_dict[key] = int(value)
+
+            with open(file_path) as f:
+                contents = f.readlines()
+            self.N = len(contents) - 1
+
+            file_name = os.path.basename(file_path)
+            self.vehicle_capacity = VC_dict[file_name[0:2]]
+            self.coords = numpy.zeros((self.N + 1, 2))
+            self.demands = numpy.zeros((self.N + 1))
+            self.time_windows = numpy.zeros((self.N + 1, 2))
+            self.service_times = numpy.zeros((self.N + 1))
+
+            for index, item in enumerate(contents):
+                string_list = item.split()
+                self.coords[index, 0] = float(string_list[1])
+                self.coords[index, 1] = float(string_list[2])
+                self.demands[index] = float(string_list[3])
+                self.time_windows[index, 0] = float(string_list[4])
+                self.time_windows[index, 1] = float(string_list[5])
+                self.service_times[index] = float(string_list[6])
+
+            self.time_matrix = self.create_time_matrix(self.coords)
+
+    def create_time_matrix(self, customer_locations=None, scale_factor=1):
+
+        if customer_locations is None:
+            customer_locations = numpy.random.random_sample((self.N + 1, 2))
+            self.coords = customer_locations
+            scale_factor = 2
 
         time_matrix = numpy.zeros((self.N + 1, self.N + 1))
-        customer_locations = numpy.random.random_sample((self.N + 1, 2))
-        self.coords = customer_locations
 
         for i in range(self.N + 1):
             for j in range(self.N + 1):
                 if i != j:
                     time_matrix[i, j] = numpy.linalg.norm(customer_locations[i, :] - customer_locations[j, :])
 
-        return time_matrix * 2
+        return time_matrix * scale_factor
 
     def create_time_windows(self, minimum_margin=2):
         time_windows = numpy.zeros((self.N + 1, 2))
@@ -57,7 +100,12 @@ class Instance_Generator(object):
 
 
 def main():
-    VRP_instance = Instance_Generator(50)
+    file = "config.json"
+    with open(file, 'r') as f:
+        config = json.load(f)
+
+    instance = config["Solomon Dataset"] + "/C101.txt"
+    VRP_instance = Instance_Generator(instance, config)
 
 
 if __name__ == "__main__":
