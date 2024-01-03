@@ -18,7 +18,6 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
     time_windows = VRP_instance.time_windows
     demands = VRP_instance.demands
     vehicle_capacity = VRP_instance.vehicle_capacity
-    time_limit = VRP_instance.time_limit
     service_times = VRP_instance.service_times
     num_customers = VRP_instance.N
 
@@ -61,7 +60,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
         # Consider saving problem parameters here in pickle files for comparison.
         time_11 = time.time()
-        subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows, time_limit,
+        subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows,
                                 duals, service_times, forbidden_edges)
         ordered_route, reduced_cost = subproblem.solve()
         time_22 = time.time()
@@ -93,7 +92,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
 
 def main():
-    num_customers = 20
+    num_customers = 50
 
     file = "config.json"
     with open(file, 'r') as f:
@@ -108,7 +107,7 @@ def main():
     service_times_list = []
 
     for x in range(1):
-        VRP_instance = Instance_Generator(num_customers)
+        VRP_instance = Instance_Generator(N=num_customers)
 
         forbidden_edges = []
         compelled_edges = []

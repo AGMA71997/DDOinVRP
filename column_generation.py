@@ -8,6 +8,9 @@ import random
 import time
 from threading import Thread
 import json
+import statistics
+
+import matplotlib.pyplot as pp
 
 
 def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, time_windows, num_customers,
@@ -491,41 +494,53 @@ class Bound_Threader(Thread):
 
 
 def main():
-    random.seed(5)
-    np.random.seed(25)
+    random.seed(10)
+    np.random.seed(10)
 
     file = "config.json"
     with open(file, 'r') as f:
         config = json.load(f)
 
-    # instance = config["Solomon Dataset"] + "/C101.txt"
-    # print("The following instance is used: "+instance)
-    num_customers = 20
-    VRP_instance = Instance_Generator(N=num_customers)
-    print("This instance has " + str(num_customers) + " customers.")
-    time_matrix = VRP_instance.time_matrix
-    time_windows = VRP_instance.time_windows
-    demands = VRP_instance.demands
-    vehicle_capacity = VRP_instance.vehicle_capacity
-    service_times = VRP_instance.service_times
-    forbidden_edges = []
-    compelled_edges = []
-    initial_routes = []
-    initial_costs = []
-    initial_orders = []
-    time_1 = time.time()
+    results = []
+    for experiment in range(50):
+        # instance = config["Solomon Dataset"] + "/C101.txt"
+        # print("The following instance is used: "+instance)
+        num_customers = 20
+        VRP_instance = Instance_Generator(N=num_customers)
+        print("This instance has " + str(num_customers) + " customers.")
+        time_matrix = VRP_instance.time_matrix
+        time_windows = VRP_instance.time_windows
+        demands = VRP_instance.demands
+        vehicle_capacity = VRP_instance.vehicle_capacity
+        service_times = VRP_instance.service_times
+        forbidden_edges = []
+        compelled_edges = []
+        initial_routes = []
+        initial_costs = []
+        initial_orders = []
+        time_1 = time.time()
 
-    sol, obj, routes, costs, orders = solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands,
-                                                                          time_windows,
-                                                                          num_customers, service_times, forbidden_edges,
-                                                                          compelled_edges,
-                                                                          initial_routes, initial_costs, initial_orders)
-    time_2 = time.time()
+        sol, obj, routes, costs, orders = solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands,
+                                                                              time_windows,
+                                                                              num_customers, service_times, forbidden_edges,
+                                                                              compelled_edges,
+                                                                              initial_routes, initial_costs, initial_orders)
+        time_2 = time.time()
 
-    print("time: " + str(time_2 - time_1))
-    print("solution: " + str(sol))
-    print("objective: " + str(obj))
-    print("number of columns: " + str(len(orders)))
+        print("time: " + str(time_2 - time_1))
+        print("solution: " + str(sol))
+        print("objective: " + str(obj))
+        print("number of columns: " + str(len(orders)))
+
+        results.append(obj)
+
+    mean_obj = statistics.mean(results)
+    #std_obj = statistics.stdev(results)
+    print("The mean objective value is: " + str(mean_obj))
+    # print("The std dev. objective is: " + str(std_obj))
+
+    pp.hist(results)
+    pp.show()
 
 
 if __name__ == "__main__":

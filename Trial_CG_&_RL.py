@@ -6,10 +6,12 @@ from ESPRCTW_RL_trainer import calculate_price
 
 import torch
 
-import json
 import random
 import numpy as np
 import sys
+import statistics
+
+import matplotlib.pyplot as pp
 
 sys.path.insert(0, r'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO')
 sys.path.insert(0, r'C:/Users/abdug/Python/POMO-implementation/ESPRCTW')
@@ -146,7 +148,7 @@ class ESPRCTW_RL_solver(object):
         for x in range(len(decisions)):
             best_column.append(int(decisions[x, 0, best_rewards_indexes[0]]))
 
-        negative_reduced_costs = real_rewards < 0
+        negative_reduced_costs = real_rewards < -0.0000001
         indices = negative_reduced_costs.nonzero()
         promising_columns = []
         for index in indices:
@@ -158,62 +160,71 @@ class ESPRCTW_RL_solver(object):
 
 
 def main():
-    file = "config.json"
-    with open(file, 'r') as f:
-        config = json.load(f)
 
-    random.seed(5)
-    np.random.seed(25)
-    num_customers = 20
-    print("This instance has " + str(num_customers) + " customers.")
-    VRP_instance = Instance_Generator(N=num_customers)
-    time_matrix = VRP_instance.time_matrix
-    time_windows = VRP_instance.time_windows
-    demands = VRP_instance.demands
-    coords = VRP_instance.coords
-    vehicle_capacity = VRP_instance.vehicle_capacity
-    service_times = VRP_instance.service_times
-    forbidden_edges = []
-    compelled_edges = []
-    initial_routes = []
-    initial_costs = []
-    initial_orders = []
+    random.seed(10)
+    np.random.seed(10)
 
-    model_params = {
-        'embedding_dim': 128,
-        'sqrt_embedding_dim': 128 ** (1 / 2),
-        'encoder_layer_num': 6,
-        'qkv_dim': 16,
-        'head_num': 8,
-        'logit_clipping': 10,
-        'ff_hidden_dim': 512,
-        'eval_type': 'argmax',
-    }
+    results = []
+    for experiment in range(50):
+        num_customers = 20
+        print("This instance has " + str(num_customers) + " customers.")
+        VRP_instance = Instance_Generator(N=num_customers)
+        time_matrix = VRP_instance.time_matrix
+        time_windows = VRP_instance.time_windows
+        demands = VRP_instance.demands
+        coords = VRP_instance.coords
+        vehicle_capacity = VRP_instance.vehicle_capacity
+        service_times = VRP_instance.service_times
+        forbidden_edges = []
+        compelled_edges = []
+        initial_routes = []
+        initial_costs = []
+        initial_orders = []
 
-    env_params = {'problem_size': num_customers,
-                  'pomo_size': num_customers}
+        model_params = {
+            'embedding_dim': 128,
+            'sqrt_embedding_dim': 128 ** (1 / 2),
+            'encoder_layer_num': 6,
+            'qkv_dim': 16,
+            'head_num': 8,
+            'logit_clipping': 10,
+            'ff_hidden_dim': 512,
+            'eval_type': 'argmax',
+        }
 
-    model_load = {
-        'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/20231211_210655_train_esprctw_n20',
-        'epoch': 60}
+        env_params = {'problem_size': num_customers,
+                      'pomo_size': num_customers}
 
-    time_1 = time.time()
-    sol, obj, routes, costs, orders = RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix,
-                                                                             demands,
-                                                                             time_windows,
-                                                                             num_customers, service_times,
-                                                                             forbidden_edges,
-                                                                             compelled_edges,
-                                                                             initial_routes, initial_costs,
-                                                                             initial_orders, model_params,
-                                                                             env_params, model_load)
-    time_2 = time.time()
+        model_load = {
+            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/saved_esprctw20_model_artificial_duals',
+            'epoch': 60}
 
-    print("time: " + str(time_2 - time_1))
-    print("solution: " + str(sol))
-    print("objective: " + str(obj))
-    print("number of columns: " + str(len(orders)))
+        time_1 = time.time()
+        sol, obj, routes, costs, orders = RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix,
+                                                                                 demands,
+                                                                                 time_windows,
+                                                                                 num_customers, service_times,
+                                                                                 forbidden_edges,
+                                                                                 compelled_edges,
+                                                                                 initial_routes, initial_costs,
+                                                                                 initial_orders, model_params,
+                                                                                 env_params, model_load)
+        time_2 = time.time()
 
+        print("time: " + str(time_2 - time_1))
+        print("solution: " + str(sol))
+        print("objective: " + str(obj))
+        print("number of columns: " + str(len(orders)))
+
+        results.append(obj)
+
+    mean_obj = statistics.mean(results)
+    # std_obj = statistics.stdev(results)
+    print("The mean objective value is: "+str(mean_obj))
+    # print("The std dev. objective is: "+str(std_obj))
+
+    pp.hist(results)
+    pp.show()
 
 if __name__ == "__main__":
     main()
