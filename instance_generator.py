@@ -71,7 +71,7 @@ class Instance_Generator(object):
 
         return time_matrix * scale_factor
 
-    def create_time_windows(self, minimum_margin=2):
+    def create_time_windows(self, minimum_margin=6):
         time_windows = numpy.zeros((self.N + 1, 2))
         for i in range(self.N + 1):
             if i != 0:

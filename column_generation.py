@@ -1,5 +1,6 @@
 import sys
 
+import numpy
 import numpy as np
 import gurobipy as gb
 from instance_generator import Instance_Generator
@@ -39,9 +40,10 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
                                    compelled_edges)
 
     added_orders = initial_orders
-
+    max_iter = 100
+    iteration = 0
     # Iterate until optimality is reached
-    while True:
+    while iteration < max_iter:
         master_problem.solve()
         # print("The objective value is: "+str(master_problem.model.objval))
         duals = master_problem.retain_duals()
@@ -49,7 +51,8 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
         time_11 = time.time()
         subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows,
                                 duals, service_times, forbidden_edges)
-        ordered_route, reduced_cost = subproblem.solve()
+        # ordered_route, reduced_cost = subproblem.solve()
+        ordered_route, reduced_cost = subproblem.solve_heuristic()
         time_22 = time.time()
         top_labels = sorted(subproblem.top_labels, key=lambda x: x[1])[1:]
         print("RC is " + str(reduced_cost))
@@ -58,18 +61,20 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
         # subproblem.render_solution(ordered_route)
         cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
         route = convert_ordered_route(ordered_route, num_customers)
+        iteration += 1
         # Check if the candidate column is optimal
         if reduced_cost < 0 and ordered_route not in added_orders:
             # Add the column to the master problem
             master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
             added_orders.append(ordered_route)
-            print("Another "+str(len(top_labels))+" are added.")
+            print("Another " + str(len(top_labels)) + " are added.")
             for x in range(len(top_labels)):
                 label = top_labels[x][0]
                 cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
                 route = convert_ordered_route(label, num_customers)
                 master_problem.add_columns([route], [cost], [label], forbidden_edges, compelled_edges)
                 added_orders.append(label)
+
         else:
             # Optimality has been reached
             print("Addition Failed")
@@ -267,15 +272,13 @@ class Subproblem:
         self.service_times = service_times
         self.forbidden_edges = forbidden_edges
         self.top_labels = []
-        self.max_column_count = 10
+        self.max_column_count = 1
 
         duals.insert(0, 0)
         duals = np.array(duals)
         duals = duals.reshape((len(duals), 1))
         self.price = time_matrix - duals
         np.fill_diagonal(self.price, 0)
-
-        self.determine_PULSE_bounds(2)
 
     def determine_PULSE_bounds(self, increment):
         self.increment = increment
@@ -408,7 +411,154 @@ class Subproblem:
 
         return best_label, best_price
 
+    def greedy_heuristic(self, start_point, unvisited_customers, current_time, remaining_capacity,
+                         current_label, current_price):
+
+        while True:
+            feasible_additions, rewards, time_consumptions, demand_consumptions = self.find_feasible_additions(
+                start_point, current_time, remaining_capacity, unvisited_customers)
+            tc_scaler = self.time_windows[0, 1]
+            d_scaler = self.vehicle_capacity
+            best_score = math.inf
+            node_added = None
+            index_added = None
+            for i, node in enumerate(feasible_additions):
+                if rewards[i] < 0:
+                    node_score = (rewards[i] + numpy.min(self.price[i, :])) / (
+                            1 + time_consumptions[i] / tc_scaler + demand_consumptions[
+                        i] / d_scaler)
+                else:
+                    node_score = (rewards[i] + numpy.min(self.price[i, :])) + (
+                            1 + time_consumptions[i] / tc_scaler + demand_consumptions[
+                        i] / d_scaler)
+
+                if node_score < best_score:
+                    best_score = node_score
+                    node_added = node
+                    index_added = i
+
+            current_label.append(node_added)
+            current_price += rewards[index_added]
+            current_time += time_consumptions[index_added]
+            remaining_capacity -= demand_consumptions[index_added]
+            start_point = node_added
+            if node_added != 0:
+                unvisited_customers.remove(node_added)
+            else:
+                break
+
+        return current_label, current_price
+
+    def DP_heuristic(self, start_point, current_label, unvisited_customers,
+                     remaining_capacity, current_time, current_price, best_bound, solve):
+        terminate = False
+        if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0:
+            return [], math.inf, terminate
+
+        if start_point == 0 and len(current_label) > 1:
+            if current_price < -0.01:
+                terminate = True
+            return current_label, current_price, terminate
+
+        waiting_time = max(self.time_windows[start_point, 0] - current_time, 0)
+        current_time += waiting_time
+        current_time += self.service_times[start_point]
+
+        '''inc = math.ceil(self.no_of_increments - (self.time_windows[0, 1] - current_time) / self.increment)
+        if 0 < inc <= self.no_of_increments:
+            if self.bounds[start_point - 1, inc - 1] < math.inf:
+                bound_estimate = current_price + self.bounds[start_point - 1, inc - 1]
+                if bound_estimate > best_bound:
+                    return [], math.inf, terminate'''
+
+        best_label = []
+        for j in unvisited_customers:
+            if j != start_point and [start_point, j] not in self.forbidden_edges:
+
+                copy_label = current_label.copy()
+                copy_unvisited = unvisited_customers.copy()
+                RC = remaining_capacity
+                CT = current_time
+                CP = current_price
+
+                copy_label.append(j)
+                copy_unvisited.remove(j)
+                RC -= self.demands[j]
+                CT += self.time_matrix[start_point, j]
+                CP += self.price[start_point, j]
+
+                if len(copy_label) > 2 and j != 0:
+                    roll_back_price = CP - (self.price[copy_label[-3], start_point] + self.price[start_point, j]) + \
+                                      self.price[copy_label[-3], j]
+
+                    roll_back_time = CT - (
+                            self.time_matrix[start_point, j] + self.service_times[start_point] + waiting_time +
+                            self.time_matrix[copy_label[-3], start_point])
+                    roll_back_time += self.time_matrix[copy_label[-3], j]
+                    roll_back_time = max(roll_back_time, self.time_windows[j, 0])
+
+                    if roll_back_price <= CP and roll_back_time <= max(self.time_windows[j, 0], CT):
+                        CT = math.inf
+
+                label, lower_bound, terminate = self.DP_heuristic(j, copy_label, copy_unvisited, RC, CT, CP,
+                                                                  best_bound, solve)
+                if lower_bound < best_bound:
+                    best_bound = lower_bound
+                    best_label = label
+
+                if terminate:
+                    break
+
+        return best_label, best_bound, terminate
+
+    def find_feasible_additions(self, start_point, current_time, remaining_capacity, unvisited_customers):
+        feasible_additions = []
+        rewards = []
+        time_consumptions = []
+        demand_consumptions = []
+        for i in unvisited_customers:
+            waiting_time = max(self.time_windows[i, 0] - (current_time + self.time_matrix[start_point, i]), 0)
+            total_return_time = self.time_matrix[start_point, i] + waiting_time + self.service_times[i] + \
+                                self.time_matrix[i, 0]
+            if (current_time + self.time_matrix[start_point, i] > self.time_windows[
+                i, 1] or remaining_capacity < self.demands[i] or current_time + total_return_time >
+                    self.time_windows[0, 1] or [start_point, i] in self.forbidden_edges):
+                continue
+            feasible_additions.append(i)
+            rewards.append(self.price[start_point, i])
+            time_consumptions.append(self.time_matrix[start_point, i] + waiting_time + self.service_times[i])
+            demand_consumptions.append(self.demands[i])
+
+        if start_point != 0 and len(feasible_additions) < 5:
+            feasible_additions.append(0)
+            rewards.append(self.price[start_point, 0])
+            time_consumptions.append(self.time_matrix[start_point, 0])
+            demand_consumptions.append(0)
+        return feasible_additions, rewards, time_consumptions, demand_consumptions
+
+    def solve_heuristic(self, policy="DP"):
+        start_point = 0
+        unvisited_customers = list(range(0, self.num_customers + 1))
+        current_time = 0
+        remaining_capacity = self.vehicle_capacity
+        current_label = [0]
+        current_price = 0
+        label, price = None, None
+        if policy == "greedy":
+            label, price = self.greedy_heuristic(start_point, unvisited_customers, current_time, remaining_capacity,
+                                                 current_label, current_price)
+        elif policy == "DP":
+            best_bound = math.inf
+            solve = True
+            label, price, terminate = self.DP_heuristic(start_point, current_label, unvisited_customers,
+                                                        remaining_capacity, current_time, current_price,
+                                                        best_bound, solve)
+        return label, price
+
     def solve(self):
+
+        self.determine_PULSE_bounds(2)
+
         threads = []
         best_routes = []
         best_costs = []
@@ -494,8 +644,8 @@ class Bound_Threader(Thread):
 
 
 def main():
-    random.seed(10)
-    np.random.seed(10)
+    random.seed(5)
+    np.random.seed(25)
 
     file = "config.json"
     with open(file, 'r') as f:
@@ -505,7 +655,7 @@ def main():
     for experiment in range(50):
         # instance = config["Solomon Dataset"] + "/C101.txt"
         # print("The following instance is used: "+instance)
-        num_customers = 20
+        num_customers = 50
         VRP_instance = Instance_Generator(N=num_customers)
         print("This instance has " + str(num_customers) + " customers.")
         time_matrix = VRP_instance.time_matrix
@@ -522,9 +672,11 @@ def main():
 
         sol, obj, routes, costs, orders = solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands,
                                                                               time_windows,
-                                                                              num_customers, service_times, forbidden_edges,
+                                                                              num_customers, service_times,
+                                                                              forbidden_edges,
                                                                               compelled_edges,
-                                                                              initial_routes, initial_costs, initial_orders)
+                                                                              initial_routes, initial_costs,
+                                                                              initial_orders)
         time_2 = time.time()
 
         print("time: " + str(time_2 - time_1))
@@ -535,12 +687,12 @@ def main():
         results.append(obj)
 
     mean_obj = statistics.mean(results)
-    #std_obj = statistics.stdev(results)
+    # std_obj = statistics.stdev(results)
     print("The mean objective value is: " + str(mean_obj))
     # print("The std dev. objective is: " + str(std_obj))
 
     pp.hist(results)
-    pp.show()
+    # pp.show()
 
 
 if __name__ == "__main__":

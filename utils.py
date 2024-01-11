@@ -44,6 +44,7 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
     depot_CL = []
     depot_TW = []
     PL = []
+    max_dual = 0
     for x in range(len(CL)):
         depot_CL.append(CL[x][0, :])
         tw_scaler = TWL[x][0, 1]
@@ -55,10 +56,13 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
         TML[x] = TML[x] / tw_scaler
         DL[x] = numpy.delete(DL[x], 0, 0) / VCL[x]
         STL[x] = numpy.delete(STL[x], 0, 0) / tw_scaler
-        DUL[x] = numpy.delete(DUL[x], 0, 0) / max(DUL[x])
+        if max(DUL[x]) > max_dual:
+            max_dual = max(DUL[x])
+            print(max_dual)
+        DUL[x] = numpy.delete(DUL[x], 0, 0) / 10
         min_val = numpy.min(PL[x])
         max_val = numpy.max(PL[x])
-        PL[x] = (PL[x] - min_val) / (max_val - min_val)
+        PL[x] = PL[x] / max(abs(max_val), abs(min_val))
 
     depot_CL = torch.tensor(depot_CL, dtype=torch.float32)
     depot_TW = torch.tensor(depot_TW, dtype=torch.float32)
