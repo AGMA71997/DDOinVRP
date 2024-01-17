@@ -1,7 +1,8 @@
-from column_generation import *
-
+from utils import *
+from column_generation import MasterProblem, Subproblem
 import sys
 import json
+import threading
 
 from instance_generator import Instance_Generator
 import time
@@ -44,51 +45,55 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
                                    compelled_edges)
 
     added_orders = initial_orders
-
+    max_iter = 100
+    iteration = 0
     # Iterate until optimality is reached
-    while True:
-        master_problem.solve()
-        duals = master_problem.retain_duals()
+    try:
+        while iteration < max_iter:
+            master_problem.solve()
+            # print("The objective value is: "+str(master_problem.model.objval))
+            duals = master_problem.retain_duals()
+            # Consider saving problem parameters here in pickle files for comparison.
+            time_11 = time.time()
+            subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows,
+                                    duals, service_times, forbidden_edges)
+            # ordered_route, reduced_cost = subproblem.solve()
+            ordered_route, reduced_cost = subproblem.solve_heuristic()
+            time_22 = time.time()
+            top_labels = sorted(subproblem.top_labels, key=lambda x: x[1])[1:]
+            print("RC is " + str(reduced_cost))
+            print("Total solving time for PP is: " + str(time_22 - time_11))
+            print(ordered_route)
+            # subproblem.render_solution(ordered_route)
+            cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
+            route = convert_ordered_route(ordered_route, num_customers)
+            iteration += 1
+            # Check if the candidate column is optimal
+            if reduced_cost < 0 and ordered_route not in added_orders:
+                # Add the column to the master problem
+                master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
+                added_orders.append(ordered_route)
+                print("Another " + str(len(top_labels)) + " are added.")
+                for x in range(len(top_labels)):
+                    label = top_labels[x][0]
+                    cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
+                    route = convert_ordered_route(label, num_customers)
+                    master_problem.add_columns([route], [cost], [label], forbidden_edges, compelled_edges)
+                    added_orders.append(label)
+            else:
+                # Optimality has been reached
+                print("Addition Failed")
+                break
 
-        coords_list.append(coords)
-        time_matrix_list.append(time_matrix)
-        time_windows_list.append(time_windows)
-        demands_list.append(demands)
-        vehicle_capacity_list.append(vehicle_capacity)
-        service_times_list.append(service_times)
-        duals_list.append(duals)
-
-        # Consider saving problem parameters here in pickle files for comparison.
-        time_11 = time.time()
-        subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows,
-                                duals, service_times, forbidden_edges)
-        ordered_route, reduced_cost = subproblem.solve()
-        time_22 = time.time()
-        top_labels = sorted(subproblem.top_labels, key=lambda x: x[1])[1:]
-        print("RC is " + str(reduced_cost))
-        print("Total solving time for PP is: " + str(time_22 - time_11))
-        print(ordered_route)
-        cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
-        route = convert_ordered_route(ordered_route, num_customers)
-        # Check if the candidate column is optimal
-        if reduced_cost < 0 and ordered_route not in added_orders:
-            # Add the column to the master problem
-            master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
-            added_orders.append(ordered_route)
-            for x in range(len(top_labels)):
-                label = top_labels[x][0]
-                cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
-                route = convert_ordered_route(label, num_customers)
-                master_problem.add_columns([route], [cost], [label], forbidden_edges, compelled_edges)
-                added_orders.append(label)
-        else:
-            # Optimality has been reached
-            print("Addition Failed")
-            break
-
-    sol, obj = master_problem.extract_solution()
-    routes, costs, orders = master_problem.extract_columns()
-    return sol, obj, routes, costs, orders
+        sol, obj = master_problem.extract_solution()
+        routes, costs, orders = master_problem.extract_columns()
+        return sol, obj, routes, costs, orders
+    except:
+        print("Loop terminated unexpectedly")
+        master_problem.__delete__()
+        time.sleep(3)
+        print("Threads: " + str(threading.active_count()))
+        sys.exit(0)
 
 
 def main():
@@ -106,7 +111,7 @@ def main():
     duals_list = []
     service_times_list = []
 
-    for x in range(1):
+    for x in range(500):
         VRP_instance = Instance_Generator(N=num_customers)
 
         forbidden_edges = []
@@ -132,12 +137,11 @@ def main():
         print("objective: " + str(obj))
         print("number of columns: " + str(len(orders)))
 
-    os.chdir(config["storge_directory_raw"])
+    os.chdir(config["storge_directory_raw_heuristic"])
     pickle_out = open('SAMPLE_ESPRCTW_instances_' + str(num_customers) + "_" + str(time_2), 'wb')
     pickle.dump([coords_list, time_matrix_list, time_windows_list, demands_list, service_times_list,
                  vehicle_capacity_list, duals_list], pickle_out)
     pickle_out.close()
-    #
 
 if __name__ == "__main__":
     main()

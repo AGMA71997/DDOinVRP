@@ -1,6 +1,6 @@
 import sys
+import threading
 
-import numpy
 import numpy as np
 import gurobipy as gb
 from instance_generator import Instance_Generator
@@ -8,8 +8,8 @@ import math
 import random
 import time
 from threading import Thread
-import json
 import statistics
+from utils import *
 
 import matplotlib.pyplot as pp
 
@@ -42,135 +42,52 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
     added_orders = initial_orders
     max_iter = 100
     iteration = 0
-    # Iterate until optimality is reached
-    while iteration < max_iter:
-        master_problem.solve()
-        # print("The objective value is: "+str(master_problem.model.objval))
-        duals = master_problem.retain_duals()
-        # Consider saving problem parameters here in pickle files for comparison.
-        time_11 = time.time()
-        subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows,
-                                duals, service_times, forbidden_edges)
-        # ordered_route, reduced_cost = subproblem.solve()
-        ordered_route, reduced_cost = subproblem.solve_heuristic()
-        time_22 = time.time()
-        top_labels = sorted(subproblem.top_labels, key=lambda x: x[1])[1:]
-        print("RC is " + str(reduced_cost))
-        print("Total solving time for PP is: " + str(time_22 - time_11))
-        print(ordered_route)
-        # subproblem.render_solution(ordered_route)
-        cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
-        route = convert_ordered_route(ordered_route, num_customers)
-        iteration += 1
-        # Check if the candidate column is optimal
-        if reduced_cost < 0 and ordered_route not in added_orders:
-            # Add the column to the master problem
-            master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
-            added_orders.append(ordered_route)
-            print("Another " + str(len(top_labels)) + " are added.")
-            for x in range(len(top_labels)):
-                label = top_labels[x][0]
-                cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
-                route = convert_ordered_route(label, num_customers)
-                master_problem.add_columns([route], [cost], [label], forbidden_edges, compelled_edges)
-                added_orders.append(label)
-
-        else:
-            # Optimality has been reached
-            print("Addition Failed")
-            break
-
-    sol, obj = master_problem.extract_solution()
-    routes, costs, orders = master_problem.extract_columns()
-    return sol, obj, routes, costs, orders
-
-
-def initialize_columns(num_customers, truck_capacity, time_matrix, service_times, time_windows, demands):
-    unvisited_customers = list(range(1, num_customers + 1))
-    solution = []
-    current_stop = 0
-    current_route = [0]
-    remaining_capacity = truck_capacity
-    current_time = 0
-    while len(unvisited_customers) > 0:
-        nearest_customers = np.argsort(time_matrix[current_stop, :].copy())
-        i = 0
-        feasible_addition = False
-
-        while not feasible_addition:
-            new_stop = nearest_customers[i]
-            waiting_time = max(time_windows[new_stop, 0] - (current_time + time_matrix[current_stop, new_stop]), 0)
-            total_return_time = time_matrix[current_stop, new_stop] + waiting_time + service_times[new_stop] + \
-                                time_matrix[new_stop, 0]
-            if current_time + time_matrix[current_stop, new_stop] > \
-                    time_windows[new_stop, 1] or remaining_capacity < demands[
-                new_stop] or new_stop not in unvisited_customers or current_time + total_return_time > \
-                    time_windows[0, 1]:
-                i += 1
+    try:
+        while iteration < max_iter:
+            master_problem.solve()
+            # print("The objective value is: "+str(master_problem.model.objval))
+            duals = master_problem.retain_duals()
+            # Consider saving problem parameters here in pickle files for comparison.
+            time_11 = time.time()
+            subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows,
+                                    duals, service_times, forbidden_edges)
+            ordered_route, reduced_cost = subproblem.solve()
+            # ordered_route, reduced_cost = subproblem.solve_heuristic()
+            time_22 = time.time()
+            top_labels = sorted(subproblem.top_labels, key=lambda x: x[1])[1:]
+            print("RC is " + str(reduced_cost))
+            print("Total solving time for PP is: " + str(time_22 - time_11))
+            print(ordered_route)
+            # subproblem.render_solution(ordered_route)
+            cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
+            route = convert_ordered_route(ordered_route, num_customers)
+            iteration += 1
+            # Check if the candidate column is optimal
+            if reduced_cost < 0 and ordered_route not in added_orders:
+                # Add the column to the master problem
+                master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
+                added_orders.append(ordered_route)
+                print("Another " + str(len(top_labels)) + " are added.")
+                for x in range(len(top_labels)):
+                    label = top_labels[x][0]
+                    cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
+                    route = convert_ordered_route(label, num_customers)
+                    master_problem.add_columns([route], [cost], [label], forbidden_edges, compelled_edges)
+                    added_orders.append(label)
             else:
-                current_route.append(new_stop)
-                remaining_capacity -= demands[new_stop]
-                current_time = max(current_time + time_matrix[current_stop, new_stop],
-                                   time_windows[new_stop, 0]) + service_times[new_stop]
-                unvisited_customers.remove(new_stop)
-                current_stop = new_stop
-                feasible_addition = True
-
-            if not feasible_addition and i == num_customers + 1:
-                current_route.append(0)
-                solution.append(current_route)
-                current_stop = 0
-                current_route = [0]
-                remaining_capacity = truck_capacity
-                current_time = 0
+                # Optimality has been reached
+                print("Addition Failed")
                 break
 
-    current_route.append(0)
-    solution.append(current_route)
-
-    singular_routes = []
-    costs = []
-    for route in solution:
-        singular_routes.append(convert_ordered_route(route, num_customers))
-        costs.append(sum(time_matrix[route[i], route[i + 1]] for i in range(len(route) - 1)))
-    return singular_routes, costs, solution
-
-
-def convert_ordered_route(ordered_route, num_customers):
-    route = np.zeros(num_customers)
-    for customer in ordered_route:
-        if customer != 0:
-            route[customer - 1] = 1
-    return route
-
-
-def create_forbidden_edges_list(num_customers, forbidden_edges, compelled_edges):
-    forbid_copy = forbidden_edges.copy()
-    for edge in compelled_edges:
-        forbid_copy += [[x, edge[1]] for x in range(num_customers + 1) if x != edge[0]]
-    return forbid_copy
-
-
-def check_route_feasibility(route, time_matrix, time_windows, service_times, demands_data, truck_capacity):
-    current_time = max(time_matrix[0, route[1]], time_windows[route[1], 0])
-    total_capacity = 0
-
-    for i in range(1, len(route)):
-        if round(current_time, 3) > time_windows[route[i], 1]:
-            print("Time Window violated")
-            print(route[i])
-            return False
-        current_time += service_times[route[i]]
-        total_capacity += demands_data[route[i]]
-        if round(total_capacity, 3) > truck_capacity:
-            print("Truck Capacity Violated")
-            print(route[i])
-            return False
-        if i < len(route) - 1:
-            # travel to next node
-            current_time += time_matrix[route[i], route[i + 1]]
-            current_time = max(current_time, time_windows[route[i + 1], 0])
-    return True
+        sol, obj = master_problem.extract_solution()
+        routes, costs, orders = master_problem.extract_columns()
+        return sol, obj, routes, costs, orders
+    except:
+        print("Loop terminated unexpectedly")
+        master_problem.__delete__()
+        time.sleep(3)
+        print("Threads: " + str(threading.active_count()))
+        sys.exit(0)
 
 
 class MasterProblem:
@@ -181,7 +98,8 @@ class MasterProblem:
         self.build_model(initial_routes, costs, ordered_routes, forbidden_edges, compelled_edges)
 
     def build_model(self, initial_routes, costs, ordered_routes, forbidden_edges, compelled_edges):
-        self.model = gb.Model()
+        self.env = gb.Env()
+        self.model = gb.Model(env=self.env)
         self.model.setParam('OutputFlag', False)
         self.y = {}
         self.routes = {}
@@ -258,6 +176,10 @@ class MasterProblem:
         costs = [self.costs[x] for x in self.costs]
         orders = [self.orders[x] for x in self.orders]
         return routes, costs, orders
+
+    def __delete__(self):
+        self.env.dispose()
+        self.model.dispose()
 
 
 class Subproblem:
@@ -464,13 +386,6 @@ class Subproblem:
         current_time += waiting_time
         current_time += self.service_times[start_point]
 
-        '''inc = math.ceil(self.no_of_increments - (self.time_windows[0, 1] - current_time) / self.increment)
-        if 0 < inc <= self.no_of_increments:
-            if self.bounds[start_point - 1, inc - 1] < math.inf:
-                bound_estimate = current_price + self.bounds[start_point - 1, inc - 1]
-                if bound_estimate > best_bound:
-                    return [], math.inf, terminate'''
-
         best_label = []
         for j in unvisited_customers:
             if j != start_point and [start_point, j] not in self.forbidden_edges:
@@ -633,6 +548,7 @@ class Bound_Threader(Thread):
     def __init__(self, target, args):
         Thread.__init__(self, target=target, args=args)
         self._return = None
+        self.daemon = True
 
     def run(self):
         if self._target is not None:
@@ -652,10 +568,10 @@ def main():
         config = json.load(f)
 
     results = []
-    for experiment in range(50):
+    for experiment in range(1):
         # instance = config["Solomon Dataset"] + "/C101.txt"
         # print("The following instance is used: "+instance)
-        num_customers = 50
+        num_customers = 25
         VRP_instance = Instance_Generator(N=num_customers)
         print("This instance has " + str(num_customers) + " customers.")
         time_matrix = VRP_instance.time_matrix
@@ -691,7 +607,7 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     # print("The std dev. objective is: " + str(std_obj))
 
-    pp.hist(results)
+    # pp.hist(results)
     # pp.show()
 
 

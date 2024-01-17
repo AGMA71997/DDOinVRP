@@ -90,6 +90,94 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
     torch.save(dict, 'ESPRCTW_Data_' + str(num_customers))
 
 
+def initialize_columns(num_customers, truck_capacity, time_matrix, service_times, time_windows, demands):
+    unvisited_customers = list(range(1, num_customers + 1))
+    solution = []
+    current_stop = 0
+    current_route = [0]
+    remaining_capacity = truck_capacity
+    current_time = 0
+    while len(unvisited_customers) > 0:
+        nearest_customers = numpy.argsort(time_matrix[current_stop, :].copy())
+        i = 0
+        feasible_addition = False
+
+        while not feasible_addition:
+            new_stop = nearest_customers[i]
+            waiting_time = max(time_windows[new_stop, 0] - (current_time + time_matrix[current_stop, new_stop]), 0)
+            total_return_time = time_matrix[current_stop, new_stop] + waiting_time + service_times[new_stop] + \
+                                time_matrix[new_stop, 0]
+            if current_time + time_matrix[current_stop, new_stop] > \
+                    time_windows[new_stop, 1] or remaining_capacity < demands[
+                new_stop] or new_stop not in unvisited_customers or current_time + total_return_time > \
+                    time_windows[0, 1]:
+                i += 1
+            else:
+                current_route.append(new_stop)
+                remaining_capacity -= demands[new_stop]
+                current_time = max(current_time + time_matrix[current_stop, new_stop],
+                                   time_windows[new_stop, 0]) + service_times[new_stop]
+                unvisited_customers.remove(new_stop)
+                current_stop = new_stop
+                feasible_addition = True
+
+            if not feasible_addition and i == num_customers + 1:
+                current_route.append(0)
+                solution.append(current_route)
+                current_stop = 0
+                current_route = [0]
+                remaining_capacity = truck_capacity
+                current_time = 0
+                break
+
+    current_route.append(0)
+    solution.append(current_route)
+
+    singular_routes = []
+    costs = []
+    for route in solution:
+        singular_routes.append(convert_ordered_route(route, num_customers))
+        costs.append(sum(time_matrix[route[i], route[i + 1]] for i in range(len(route) - 1)))
+    return singular_routes, costs, solution
+
+
+def convert_ordered_route(ordered_route, num_customers):
+    route = numpy.zeros(num_customers)
+    for customer in ordered_route:
+        if customer != 0:
+            route[customer - 1] = 1
+    return route
+
+
+def create_forbidden_edges_list(num_customers, forbidden_edges, compelled_edges):
+    forbid_copy = forbidden_edges.copy()
+    for edge in compelled_edges:
+        forbid_copy += [[x, edge[1]] for x in range(num_customers + 1) if x != edge[0]]
+    return forbid_copy
+
+
+def check_route_feasibility(route, time_matrix, time_windows, service_times, demands_data, truck_capacity):
+    current_time = max(time_matrix[0, route[1]], time_windows[route[1], 0])
+    total_capacity = 0
+
+    for i in range(1, len(route)):
+        if round(current_time, 3) > time_windows[route[i], 1]:
+            print("Time Window violated")
+            print(route[i])
+            return False
+        current_time += service_times[route[i]]
+        total_capacity += demands_data[route[i]]
+        if round(total_capacity, 3) > truck_capacity:
+            print("Truck Capacity Violated")
+            print(route[i])
+            return False
+        if i < len(route) - 1:
+            # travel to next node
+            current_time += time_matrix[route[i], route[i + 1]]
+            current_time = max(current_time, time_windows[route[i + 1], 0])
+    return True
+
+
 def main():
     POMO = True
 
