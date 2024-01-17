@@ -57,8 +57,10 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
             time_11 = time.time()
             subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows,
                                     duals, service_times, forbidden_edges)
-            # ordered_route, reduced_cost = subproblem.solve()
-            ordered_route, reduced_cost = subproblem.solve_heuristic()
+            if heuristic:
+                ordered_route, reduced_cost = subproblem.solve_heuristic()
+            else:
+                ordered_route, reduced_cost = subproblem.solve()
             time_22 = time.time()
             top_labels = sorted(subproblem.top_labels, key=lambda x: x[1])[1:]
             print("RC is " + str(reduced_cost))
@@ -99,6 +101,9 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 def main():
     num_customers = 50
 
+    global heuristic
+    heuristic = True
+
     file = "config.json"
     with open(file, 'r') as f:
         config = json.load(f)
@@ -111,7 +116,7 @@ def main():
     duals_list = []
     service_times_list = []
 
-    for x in range(500):
+    for x in range(50):
         VRP_instance = Instance_Generator(N=num_customers)
 
         forbidden_edges = []
@@ -137,7 +142,7 @@ def main():
         print("objective: " + str(obj))
         print("number of columns: " + str(len(orders)))
 
-    os.chdir(config["storge_directory_raw_heuristic"])
+    os.chdir(config["storge_directory_raw_heuristic"] + "/" + str(num_customers))
     pickle_out = open('SAMPLE_ESPRCTW_instances_' + str(num_customers) + "_" + str(time_2), 'wb')
     pickle.dump([coords_list, time_matrix_list, time_windows_list, demands_list, service_times_list,
                  vehicle_capacity_list, duals_list], pickle_out)

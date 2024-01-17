@@ -51,8 +51,10 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
             time_11 = time.time()
             subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows,
                                     duals, service_times, forbidden_edges)
-            ordered_route, reduced_cost = subproblem.solve()
-            # ordered_route, reduced_cost = subproblem.solve_heuristic()
+            if heuristic:
+                ordered_route, reduced_cost = subproblem.solve_heuristic()
+            else:
+                ordered_route, reduced_cost = subproblem.solve()
             time_22 = time.time()
             top_labels = sorted(subproblem.top_labels, key=lambda x: x[1])[1:]
             print("RC is " + str(reduced_cost))
@@ -562,6 +564,9 @@ class Bound_Threader(Thread):
 def main():
     random.seed(5)
     np.random.seed(25)
+
+    global heuristic
+    heuristic = False
 
     file = "config.json"
     with open(file, 'r') as f:

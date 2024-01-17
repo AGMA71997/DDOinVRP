@@ -12,8 +12,8 @@ def create_price(time_matrix, duals):
     return (time_matrix - duals) * -1
 
 
-def data_iterator(config, POMO):
-    directory = config["storge_directory_raw"]
+def data_iterator(config, POMO, num_customers):
+    directory = config["storge_directory_raw"] + "/" + str(num_customers)
     CL, TML, TWL, DL, STL, VCL, DUL = [], [], [], [], [], [], []
     data_count = 0
     for filename in os.listdir(directory):
@@ -30,14 +30,13 @@ def data_iterator(config, POMO):
         DUL += dul
     print(data_count)
 
-    num_customers = len(CL[0]) - 1
     if POMO:
         process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config)
-    else:
+    '''else:
         os.chdir(config['SB3 Data'])
-        pickle_out = open('ESPRCTW_Data' + str(num_customers), 'wb')
+        pickle_out = open('ESPRCTW_Data_' + str(num_customers), 'wb')
         pickle.dump([TML, TWL, DL, STL, VCL, DUL], pickle_out)
-        pickle_out.close()
+        pickle_out.close()'''
 
 
 def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config):
@@ -86,7 +85,7 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
             'travel_times': TML,
             'prices': PL}
 
-    os.chdir(config["POMO Data"])
+    os.chdir(config["POMO Data"]+"/"+str(num_customers))
     torch.save(dict, 'ESPRCTW_Data_' + str(num_customers))
 
 
@@ -180,12 +179,12 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 
 def main():
     POMO = True
-
+    num_customers = 20
     file = "config.json"
     with open(file, 'r') as f:
         config = json.load(f)
 
-    data_iterator(config, POMO)
+    data_iterator(config, POMO, num_customers)
 
 
 if __name__ == "__main__":
