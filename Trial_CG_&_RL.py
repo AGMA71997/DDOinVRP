@@ -219,9 +219,9 @@ def main():
         results.append(obj)
 
     mean_obj = statistics.mean(results)
-    # std_obj = statistics.stdev(results)
+    std_obj = statistics.stdev(results)
     print("The mean objective value is: "+str(mean_obj))
-    # print("The std dev. objective is: "+str(std_obj))
+    print("The std dev. objective is: "+str(std_obj))
 
     pp.hist(results)
     pp.show()

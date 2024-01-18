@@ -204,6 +204,14 @@ class Subproblem:
         self.price = time_matrix - duals
         np.fill_diagonal(self.price, 0)
 
+        self.price_arrangement = self.arrange_per_price()
+
+    def arrange_per_price(self):
+        arrangements = {}
+        for cus in range(self.num_customers + 1):
+            arrangements[cus] = numpy.argsort(self.price[cus, :])
+        return arrangements
+
     def determine_PULSE_bounds(self, increment):
         self.increment = increment
         self.no_of_increments = math.ceil(self.time_windows[0, 1] / self.increment - 1)
@@ -263,39 +271,42 @@ class Subproblem:
                     return [], math.inf
 
         best_label = []
-        for j in unvisited_customers:
-            if j != start_point and [start_point, j] not in self.forbidden_edges:
+        best_price_indices = self.price_arrangement[start_point]
+        for index in range(len(best_price_indices)):
+            j = best_price_indices[index]
+            if j in unvisited_customers:
+                if j != start_point and [start_point, j] not in self.forbidden_edges:
 
-                copy_label = current_label.copy()
-                copy_unvisited = unvisited_customers.copy()
-                RC = remaining_capacity
-                CT = current_time
-                CP = current_price
+                    copy_label = current_label.copy()
+                    copy_unvisited = unvisited_customers.copy()
+                    RC = remaining_capacity
+                    CT = current_time
+                    CP = current_price
 
-                copy_label.append(j)
-                copy_unvisited.remove(j)
-                RC -= self.demands[j]
-                CT += self.time_matrix[start_point, j]
-                CP += self.price[start_point, j]
+                    copy_label.append(j)
+                    copy_unvisited.remove(j)
+                    RC -= self.demands[j]
+                    CT += self.time_matrix[start_point, j]
+                    CP += self.price[start_point, j]
 
-                if len(copy_label) > 2 and j != 0:
-                    roll_back_price = CP - (self.price[copy_label[-3], start_point] + self.price[start_point, j]) + \
-                                      self.price[copy_label[-3], j]
+                    if len(copy_label) > 2 and j != 0:
+                        roll_back_price = CP - (self.price[copy_label[-3], start_point] + self.price[start_point, j]) + \
+                                          self.price[copy_label[-3], j]
 
-                    roll_back_time = CT - (
-                            self.time_matrix[start_point, j] + self.service_times[start_point] + waiting_time +
-                            self.time_matrix[copy_label[-3], start_point])
-                    roll_back_time += self.time_matrix[copy_label[-3], j]
-                    roll_back_time = max(roll_back_time, self.time_windows[j, 0])
+                        roll_back_time = CT - (
+                                self.time_matrix[start_point, j] + self.service_times[start_point] + waiting_time +
+                                self.time_matrix[copy_label[-3], start_point])
+                        roll_back_time += self.time_matrix[copy_label[-3], j]
+                        roll_back_time = max(roll_back_time, self.time_windows[j, 0])
 
-                    if roll_back_price <= CP and roll_back_time <= max(self.time_windows[j, 0], CT):
-                        CT = math.inf
+                        if roll_back_price <= CP and roll_back_time <= max(self.time_windows[j, 0], CT):
+                            CT = math.inf
 
-                label, lower_bound = self.bound_calculator(j, copy_label, copy_unvisited, RC, CT, CP,
-                                                           best_bound, solve)
-                if lower_bound < best_bound:
-                    best_bound = lower_bound
-                    best_label = label
+                    label, lower_bound = self.bound_calculator(j, copy_label, copy_unvisited, RC, CT, CP,
+                                                               best_bound, solve)
+                    if lower_bound < best_bound:
+                        best_bound = lower_bound
+                        best_label = label
 
         return best_label, best_bound
 
@@ -313,25 +324,28 @@ class Subproblem:
 
         best_label = []
         best_price = math.inf
-        for j in unvisited_customers:
-            if j != start_point and [start_point, j] not in self.forbidden_edges:
-                copy_label = current_label.copy()
-                copy_unvisited = unvisited_customers.copy()
-                RC = remaining_capacity
-                CT = current_time
-                CP = current_price
+        best_price_indices = self.price_arrangement[start_point]
+        for index in range(len(best_price_indices)):
+            j = best_price_indices[index]
+            if j in unvisited_customers:
+                if j != start_point and [start_point, j] not in self.forbidden_edges:
+                    copy_label = current_label.copy()
+                    copy_unvisited = unvisited_customers.copy()
+                    RC = remaining_capacity
+                    CT = current_time
+                    CP = current_price
 
-                copy_label.append(j)
-                copy_unvisited.remove(j)
-                RC -= self.demands[j]
-                CT += self.time_matrix[start_point, j]
-                CP += self.price[start_point, j]
+                    copy_label.append(j)
+                    copy_unvisited.remove(j)
+                    RC -= self.demands[j]
+                    CT += self.time_matrix[start_point, j]
+                    CP += self.price[start_point, j]
 
-                label, price = self.dynamic_program(j, copy_label, copy_unvisited, RC, CT, CP)
+                    label, price = self.dynamic_program(j, copy_label, copy_unvisited, RC, CT, CP)
 
-                if price < best_price:
-                    best_price = price
-                    best_label = label
+                    if price < best_price:
+                        best_price = price
+                        best_label = label
 
         return best_label, best_price
 
@@ -389,42 +403,45 @@ class Subproblem:
         current_time += self.service_times[start_point]
 
         best_label = []
-        for j in unvisited_customers:
-            if j != start_point and [start_point, j] not in self.forbidden_edges:
+        best_price_indices = self.price_arrangement[start_point]
+        for index in range(len(best_price_indices)):
+            j = best_price_indices[index]
+            if j in unvisited_customers:
+                if j != start_point and [start_point, j] not in self.forbidden_edges:
 
-                copy_label = current_label.copy()
-                copy_unvisited = unvisited_customers.copy()
-                RC = remaining_capacity
-                CT = current_time
-                CP = current_price
+                    copy_label = current_label.copy()
+                    copy_unvisited = unvisited_customers.copy()
+                    RC = remaining_capacity
+                    CT = current_time
+                    CP = current_price
 
-                copy_label.append(j)
-                copy_unvisited.remove(j)
-                RC -= self.demands[j]
-                CT += self.time_matrix[start_point, j]
-                CP += self.price[start_point, j]
+                    copy_label.append(j)
+                    copy_unvisited.remove(j)
+                    RC -= self.demands[j]
+                    CT += self.time_matrix[start_point, j]
+                    CP += self.price[start_point, j]
 
-                if len(copy_label) > 2 and j != 0:
-                    roll_back_price = CP - (self.price[copy_label[-3], start_point] + self.price[start_point, j]) + \
-                                      self.price[copy_label[-3], j]
+                    if len(copy_label) > 2 and j != 0:
+                        roll_back_price = CP - (self.price[copy_label[-3], start_point] + self.price[start_point, j]) + \
+                                          self.price[copy_label[-3], j]
 
-                    roll_back_time = CT - (
-                            self.time_matrix[start_point, j] + self.service_times[start_point] + waiting_time +
-                            self.time_matrix[copy_label[-3], start_point])
-                    roll_back_time += self.time_matrix[copy_label[-3], j]
-                    roll_back_time = max(roll_back_time, self.time_windows[j, 0])
+                        roll_back_time = CT - (
+                                self.time_matrix[start_point, j] + self.service_times[start_point] + waiting_time +
+                                self.time_matrix[copy_label[-3], start_point])
+                        roll_back_time += self.time_matrix[copy_label[-3], j]
+                        roll_back_time = max(roll_back_time, self.time_windows[j, 0])
 
-                    if roll_back_price <= CP and roll_back_time <= max(self.time_windows[j, 0], CT):
-                        CT = math.inf
+                        if roll_back_price <= CP and roll_back_time <= max(self.time_windows[j, 0], CT):
+                            CT = math.inf
 
-                label, lower_bound, terminate = self.DP_heuristic(j, copy_label, copy_unvisited, RC, CT, CP,
-                                                                  best_bound, solve)
-                if lower_bound < best_bound:
-                    best_bound = lower_bound
-                    best_label = label
+                    label, lower_bound, terminate = self.DP_heuristic(j, copy_label, copy_unvisited, RC, CT, CP,
+                                                                      best_bound, solve)
+                    if lower_bound < best_bound:
+                        best_bound = lower_bound
+                        best_label = label
 
-                if terminate:
-                    break
+                    if terminate:
+                        break
 
         return best_label, best_bound, terminate
 
@@ -608,9 +625,9 @@ def main():
         results.append(obj)
 
     mean_obj = statistics.mean(results)
-    # std_obj = statistics.stdev(results)
+    std_obj = statistics.stdev(results)
     print("The mean objective value is: " + str(mean_obj))
-    # print("The std dev. objective is: " + str(std_obj))
+    print("The std dev. objective is: " + str(std_obj))
 
     pp.hist(results)
     pp.show()

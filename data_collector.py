@@ -109,7 +109,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
 
 def main():
-    num_customers = 20
+    num_customers = 100
 
     global heuristic
     heuristic = True
@@ -126,7 +126,7 @@ def main():
     duals_list = []
     service_times_list = []
 
-    for x in range(25):
+    for x in range(500):
         VRP_instance = Instance_Generator(N=num_customers)
 
         forbidden_edges = []

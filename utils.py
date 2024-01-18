@@ -9,7 +9,9 @@ def create_price(time_matrix, duals):
     duals = duals.copy()
     duals = numpy.array(duals)
     duals = duals.reshape((len(duals), 1))
-    return (time_matrix - duals) * -1
+    prices = (time_matrix - duals) * -1
+    numpy.fill_diagonal(prices, 0)
+    return prices
 
 
 def data_iterator(config, POMO, num_customers, heuristic):
@@ -185,7 +187,7 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 
 def main():
     POMO = True
-    heuristic = True
+    heuristic = False
     num_customers = 20
     file = "config.json"
     with open(file, 'r') as f:
