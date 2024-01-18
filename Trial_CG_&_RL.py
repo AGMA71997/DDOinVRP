@@ -196,8 +196,8 @@ def main():
                       'pomo_size': num_customers}
 
         model_load = {
-            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/saved_esprctw20_model_artificial_duals',
-            'epoch': 60}
+            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/saved_esprctw20_model_cg_loop',
+            'epoch': 30}
 
         time_1 = time.time()
         sol, obj, routes, costs, orders = RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix,

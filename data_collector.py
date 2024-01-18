@@ -22,6 +22,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
     service_times = VRP_instance.service_times
     num_customers = VRP_instance.N
 
+
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
 
@@ -53,6 +54,15 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
             master_problem.solve()
             # print("The objective value is: "+str(master_problem.model.objval))
             duals = master_problem.retain_duals()
+
+            coords_list.append(coords)
+            time_matrix_list.append(time_matrix)
+            time_windows_list.append(time_windows)
+            demands_list.append(demands)
+            vehicle_capacity_list.append(vehicle_capacity)
+            service_times_list.append(service_times)
+            duals_list.append(duals)
+
             # Consider saving problem parameters here in pickle files for comparison.
             time_11 = time.time()
             subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows,
@@ -99,7 +109,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
 
 def main():
-    num_customers = 50
+    num_customers = 20
 
     global heuristic
     heuristic = True
@@ -116,7 +126,7 @@ def main():
     duals_list = []
     service_times_list = []
 
-    for x in range(50):
+    for x in range(25):
         VRP_instance = Instance_Generator(N=num_customers)
 
         forbidden_edges = []
@@ -142,7 +152,10 @@ def main():
         print("objective: " + str(obj))
         print("number of columns: " + str(len(orders)))
 
-    os.chdir(config["storge_directory_raw_heuristic"] + "/" + str(num_customers))
+    if heuristic:
+        os.chdir(config["storge_directory_raw_heuristic"] + "/" + str(num_customers))
+    else:
+        os.chdir(config["storge_directory_raw"] + "/" + str(num_customers))
     pickle_out = open('SAMPLE_ESPRCTW_instances_' + str(num_customers) + "_" + str(time_2), 'wb')
     pickle.dump([coords_list, time_matrix_list, time_windows_list, demands_list, service_times_list,
                  vehicle_capacity_list, duals_list], pickle_out)

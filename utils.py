@@ -12,8 +12,11 @@ def create_price(time_matrix, duals):
     return (time_matrix - duals) * -1
 
 
-def data_iterator(config, POMO, num_customers):
-    directory = config["storge_directory_raw"] + "/" + str(num_customers)
+def data_iterator(config, POMO, num_customers, heuristic):
+    if heuristic:
+        directory = config["storge_directory_raw_heuristic"] + "/" + str(num_customers)
+    else:
+        directory = config["storge_directory_raw"] + "/" + str(num_customers)
     CL, TML, TWL, DL, STL, VCL, DUL = [], [], [], [], [], [], []
     data_count = 0
     for filename in os.listdir(directory):
@@ -31,7 +34,7 @@ def data_iterator(config, POMO, num_customers):
     print(data_count)
 
     if POMO:
-        process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config)
+        process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config, heuristic)
     '''else:
         os.chdir(config['SB3 Data'])
         pickle_out = open('ESPRCTW_Data_' + str(num_customers), 'wb')
@@ -39,7 +42,7 @@ def data_iterator(config, POMO, num_customers):
         pickle_out.close()'''
 
 
-def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config):
+def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config, heuristic):
     depot_CL = []
     depot_TW = []
     PL = []
@@ -85,7 +88,10 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
             'travel_times': TML,
             'prices': PL}
 
-    os.chdir(config["POMO Data"]+"/"+str(num_customers))
+    if heuristic:
+        os.chdir(config["POMO Data Heuristic"] + "/" + str(num_customers))
+    else:
+        os.chdir(config["POMO Data"]+"/"+str(num_customers))
     torch.save(dict, 'ESPRCTW_Data_' + str(num_customers))
 
 
@@ -179,12 +185,13 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 
 def main():
     POMO = True
+    heuristic = True
     num_customers = 20
     file = "config.json"
     with open(file, 'r') as f:
         config = json.load(f)
 
-    data_iterator(config, POMO, num_customers)
+    data_iterator(config, POMO, num_customers, heuristic)
 
 
 if __name__ == "__main__":

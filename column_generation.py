@@ -562,8 +562,8 @@ class Bound_Threader(Thread):
 
 
 def main():
-    random.seed(5)
-    np.random.seed(25)
+    random.seed(10)
+    np.random.seed(10)
 
     global heuristic
     heuristic = False
@@ -573,10 +573,10 @@ def main():
         config = json.load(f)
 
     results = []
-    for experiment in range(1):
+    for experiment in range(50):
         # instance = config["Solomon Dataset"] + "/C101.txt"
         # print("The following instance is used: "+instance)
-        num_customers = 25
+        num_customers = 20
         VRP_instance = Instance_Generator(N=num_customers)
         print("This instance has " + str(num_customers) + " customers.")
         time_matrix = VRP_instance.time_matrix
@@ -612,8 +612,8 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     # print("The std dev. objective is: " + str(std_obj))
 
-    # pp.hist(results)
-    # pp.show()
+    pp.hist(results)
+    pp.show()
 
 
 if __name__ == "__main__":
