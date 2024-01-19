@@ -166,7 +166,7 @@ def main():
 
     results = []
     for experiment in range(50):
-        num_customers = 20
+        num_customers = 100
         print("This instance has " + str(num_customers) + " customers.")
         VRP_instance = Instance_Generator(N=num_customers)
         time_matrix = VRP_instance.time_matrix
@@ -193,10 +193,10 @@ def main():
         }
 
         env_params = {'problem_size': num_customers,
-                      'pomo_size': num_customers}
+                      'pomo_size': 20}
 
         model_load = {
-            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/saved_esprctw20_model_cg_loop',
+            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/saved_esprctw100_model_heuristic_data',
             'epoch': 30}
 
         time_1 = time.time()

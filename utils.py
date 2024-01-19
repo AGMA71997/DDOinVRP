@@ -68,15 +68,17 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
         max_val = numpy.max(PL[x])
         PL[x] = PL[x] / max(abs(max_val), abs(min_val))
 
-    depot_CL = torch.tensor(depot_CL, dtype=torch.float32)
-    depot_TW = torch.tensor(depot_TW, dtype=torch.float32)
-    CL = torch.tensor(CL, dtype=torch.float32)
-    TWL = torch.tensor(TWL, dtype=torch.float32)
-    TML = torch.tensor(TML, dtype=torch.float32)
-    DL = torch.tensor(DL, dtype=torch.float32)
-    STL = torch.tensor(STL, dtype=torch.float32)
-    DUL = torch.tensor(DUL, dtype=torch.float32)
-    PL = torch.tensor(PL, dtype=torch.float32)
+    depot_CL = torch.tensor(numpy.stack(depot_CL), dtype=torch.float32)
+    depot_TW = torch.tensor(numpy.stack(depot_TW), dtype=torch.float32)
+    CL = torch.tensor(numpy.stack(CL), dtype=torch.float32)
+    TWL = torch.tensor(numpy.stack(TWL), dtype=torch.float32)
+    TML = torch.tensor(numpy.stack(TML), dtype=torch.float32)
+    DL = torch.tensor(numpy.stack(DL), dtype=torch.float32)
+    STL = torch.tensor(numpy.stack(STL), dtype=torch.float32)
+    DUL = torch.tensor(numpy.stack(DUL), dtype=torch.float32)
+    PL = torch.tensor(numpy.stack(PL), dtype=torch.float32)
+
+    print(depot_CL.shape)
 
     depot_CL = depot_CL[:, None, :].expand(-1, 1, -1)
     depot_TW = depot_TW[:, None, :].expand(-1, 1, -1)
@@ -93,7 +95,7 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
     if heuristic:
         os.chdir(config["POMO Data Heuristic"] + "/" + str(num_customers))
     else:
-        os.chdir(config["POMO Data"]+"/"+str(num_customers))
+        os.chdir(config["POMO Data"] + "/" + str(num_customers))
     torch.save(dict, 'ESPRCTW_Data_' + str(num_customers))
 
 
@@ -187,8 +189,8 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 
 def main():
     POMO = True
-    heuristic = False
-    num_customers = 20
+    heuristic = True
+    num_customers = 100
     file = "config.json"
     with open(file, 'r') as f:
         config = json.load(f)
