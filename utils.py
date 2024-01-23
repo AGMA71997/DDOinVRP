@@ -3,6 +3,7 @@ import os
 import numpy
 import torch
 import json
+import matplotlib.pyplot as pp
 
 
 def create_price(time_matrix, duals):
@@ -62,8 +63,7 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
         STL[x] = numpy.delete(STL[x], 0, 0) / tw_scaler
         if max(DUL[x]) > max_dual:
             max_dual = max(DUL[x])
-            print(max_dual)
-        DUL[x] = numpy.delete(DUL[x], 0, 0) / 10
+        DUL[x] = numpy.delete(DUL[x], 0, 0)  # / 10
         min_val = numpy.min(PL[x])
         max_val = numpy.max(PL[x])
         PL[x] = PL[x] / max(abs(max_val), abs(min_val))
@@ -75,10 +75,8 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
     TML = torch.tensor(numpy.stack(TML), dtype=torch.float32)
     DL = torch.tensor(numpy.stack(DL), dtype=torch.float32)
     STL = torch.tensor(numpy.stack(STL), dtype=torch.float32)
-    DUL = torch.tensor(numpy.stack(DUL), dtype=torch.float32)
+    DUL = torch.tensor(numpy.stack(DUL)/max_dual, dtype=torch.float32)
     PL = torch.tensor(numpy.stack(PL), dtype=torch.float32)
-
-    print(depot_CL.shape)
 
     depot_CL = depot_CL[:, None, :].expand(-1, 1, -1)
     depot_TW = depot_TW[:, None, :].expand(-1, 1, -1)

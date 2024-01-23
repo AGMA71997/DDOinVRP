@@ -22,7 +22,6 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
     service_times = VRP_instance.service_times
     num_customers = VRP_instance.N
 
-
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
 
@@ -46,13 +45,13 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
                                    compelled_edges)
 
     added_orders = initial_orders
-    max_iter = 100
+    max_iter = 500
     iteration = 0
     # Iterate until optimality is reached
     try:
         while iteration < max_iter:
             master_problem.solve()
-            # print("The objective value is: "+str(master_problem.model.objval))
+            print("The objective value is: "+str(master_problem.model.objval))
             duals = master_problem.retain_duals()
 
             coords_list.append(coords)
@@ -68,11 +67,11 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
             subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows,
                                     duals, service_times, forbidden_edges)
             if heuristic:
-                ordered_route, reduced_cost = subproblem.solve_heuristic()
+                ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic()
             else:
-                ordered_route, reduced_cost = subproblem.solve()
+                ordered_route, reduced_cost, top_labels = subproblem.solve()
             time_22 = time.time()
-            top_labels = sorted(subproblem.top_labels, key=lambda x: x[1])[1:]
+
             print("RC is " + str(reduced_cost))
             print("Total solving time for PP is: " + str(time_22 - time_11))
             print(ordered_route)
@@ -126,8 +125,10 @@ def main():
     duals_list = []
     service_times_list = []
 
-    for x in range(500):
-        VRP_instance = Instance_Generator(N=num_customers)
+    directory = config["Solomon Training Dataset"]
+    for instance in os.listdir(directory):
+        file = directory+"/"+instance
+        VRP_instance = Instance_Generator(file_path=file, config=config)
 
         forbidden_edges = []
         compelled_edges = []
@@ -151,15 +152,17 @@ def main():
         print("solution: " + str(sol))
         print("objective: " + str(obj))
         print("number of columns: " + str(len(orders)))
+        sys.exit(0)
 
     if heuristic:
         os.chdir(config["storge_directory_raw_heuristic"] + "/" + str(num_customers))
     else:
         os.chdir(config["storge_directory_raw"] + "/" + str(num_customers))
-    pickle_out = open('SAMPLE_ESPRCTW_instances_' + str(num_customers) + "_" + str(time_2), 'wb')
+    pickle_out = open('SAMPLE_ESPRCTW_instances_' + str(num_customers) + "_Solomon_" + str(time_2), 'wb')
     pickle.dump([coords_list, time_matrix_list, time_windows_list, demands_list, service_times_list,
                  vehicle_capacity_list, duals_list], pickle_out)
     pickle_out.close()
+
 
 if __name__ == "__main__":
     main()

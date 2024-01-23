@@ -38,7 +38,10 @@ class Instance_Generator(object):
             self.N = len(contents) - 1
 
             file_name = os.path.basename(file_path)
-            self.vehicle_capacity = VC_dict[file_name[0:2]]
+            try:
+                self.vehicle_capacity = VC_dict[file_name[0:2]]
+            except:
+                self.vehicle_capacity = VC_dict[file_name[0:3]]
             self.coords = numpy.zeros((self.N + 1, 2))
             self.demands = numpy.zeros((self.N + 1))
             self.time_windows = numpy.zeros((self.N + 1, 2))

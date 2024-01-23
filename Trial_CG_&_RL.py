@@ -5,7 +5,7 @@ import time
 from ESPRCTW_RL_trainer import calculate_price
 
 import torch
-
+import json
 import random
 import numpy as np
 import sys
@@ -160,13 +160,18 @@ class ESPRCTW_RL_solver(object):
 
 
 def main():
-
     random.seed(10)
     np.random.seed(10)
 
+    file = "config.json"
+    with open(file, 'r') as f:
+        config = json.load(f)
+
     results = []
-    for experiment in range(50):
-        num_customers = 100
+    for experiment in range(1):
+        num_customers = 20
+        # instance = config["Solomon Dataset"] + "/C101.txt"
+        # print("The following instance is used: " + instance)
         print("This instance has " + str(num_customers) + " customers.")
         VRP_instance = Instance_Generator(N=num_customers)
         time_matrix = VRP_instance.time_matrix
@@ -196,8 +201,8 @@ def main():
                       'pomo_size': 20}
 
         model_load = {
-            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/saved_esprctw100_model_heuristic_data',
-            'epoch': 30}
+            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/saved_esprctw100_model_heuristic_data_prop_train',
+            'epoch': 100}
 
         time_1 = time.time()
         sol, obj, routes, costs, orders = RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix,
@@ -220,11 +225,12 @@ def main():
 
     mean_obj = statistics.mean(results)
     std_obj = statistics.stdev(results)
-    print("The mean objective value is: "+str(mean_obj))
-    print("The std dev. objective is: "+str(std_obj))
+    print("The mean objective value is: " + str(mean_obj))
+    print("The std dev. objective is: " + str(std_obj))
 
     pp.hist(results)
     pp.show()
+
 
 if __name__ == "__main__":
     main()
