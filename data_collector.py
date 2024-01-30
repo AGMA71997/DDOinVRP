@@ -8,6 +8,7 @@ from instance_generator import Instance_Generator
 import time
 import pickle
 import os
+import argparse
 
 
 def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
@@ -45,13 +46,13 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
                                    compelled_edges)
 
     added_orders = initial_orders
-    max_iter = 500
+    max_iter = 2000
     iteration = 0
     # Iterate until optimality is reached
     try:
         while iteration < max_iter:
             master_problem.solve()
-            print("The objective value is: "+str(master_problem.model.objval))
+            print("The objective value is: " + str(master_problem.model.objval))
             duals = master_problem.retain_duals()
 
             coords_list.append(coords)
@@ -79,6 +80,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
             cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
             route = convert_ordered_route(ordered_route, num_customers)
             iteration += 1
+            print("Iteration: " + str(iteration))
             # Check if the candidate column is optimal
             if reduced_cost < 0 and ordered_route not in added_orders:
                 # Add the column to the master problem
@@ -98,20 +100,24 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
         sol, obj = master_problem.extract_solution()
         routes, costs, orders = master_problem.extract_columns()
+        master_problem.__delete__()
         return sol, obj, routes, costs, orders
     except:
         print("Loop terminated unexpectedly")
         master_problem.__delete__()
-        time.sleep(3)
-        print("Threads: " + str(threading.active_count()))
-        sys.exit(0)
+        return [], None, [], [], []
 
 
 def main():
-    num_customers = 100
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--file_sequence', type=str)
+    parser.add_argument('--num_customers', type=int, default=100)
+    parser.add_argument('--heuristic', type=bool, default=True)
+    args = parser.parse_args()
+    num_customers = args.num_customers
 
     global heuristic
-    heuristic = True
+    heuristic = args.heuristic
 
     file = "config.json"
     with open(file, 'r') as f:
@@ -127,32 +133,35 @@ def main():
 
     directory = config["Solomon Training Dataset"]
     for instance in os.listdir(directory):
-        file = directory+"/"+instance
-        VRP_instance = Instance_Generator(file_path=file, config=config)
+        if instance.startswith(args.file_sequence):
+            file = directory + "/" + instance
+            VRP_instance = Instance_Generator(file_path=file, config=config)
 
-        forbidden_edges = []
-        compelled_edges = []
-        initial_routes = []
-        initial_costs = []
-        initial_orders = []
-        time_1 = time.time()
+            forbidden_edges = []
+            compelled_edges = []
+            initial_routes = []
+            initial_costs = []
+            initial_orders = []
+            time_1 = time.time()
 
-        sol, obj, routes, costs, orders = generate_CVRPTW_data(VRP_instance,
-                                                               forbidden_edges,
-                                                               compelled_edges,
-                                                               initial_routes, initial_costs,
-                                                               initial_orders, coords_list,
-                                                               time_matrix_list,
-                                                               time_windows_list, demands_list,
-                                                               duals_list,
-                                                               vehicle_capacity_list, service_times_list)
-        time_2 = time.time()
+            sol, obj, routes, costs, orders = generate_CVRPTW_data(VRP_instance,
+                                                                   forbidden_edges,
+                                                                   compelled_edges,
+                                                                   initial_routes, initial_costs,
+                                                                   initial_orders, coords_list,
+                                                                   time_matrix_list,
+                                                                   time_windows_list, demands_list,
+                                                                   duals_list,
+                                                                   vehicle_capacity_list, service_times_list)
+            time_2 = time.time()
 
-        print("time: " + str(time_2 - time_1))
-        print("solution: " + str(sol))
-        print("objective: " + str(obj))
-        print("number of columns: " + str(len(orders)))
-        sys.exit(0)
+            print("time: " + str(time_2 - time_1))
+            print("solution: " + str(sol))
+            print("objective: " + str(obj))
+            print("number of columns: " + str(len(orders)))
+
+            if not sol:
+                break
 
     if heuristic:
         os.chdir(config["storge_directory_raw_heuristic"] + "/" + str(num_customers))

@@ -82,12 +82,11 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
 
         sol, obj = master_problem.extract_solution()
         routes, costs, orders = master_problem.extract_columns()
+        master_problem.__delete__()
         return sol, obj, routes, costs, orders
     except:
         print("Loop terminated unexpectedly")
         master_problem.__delete__()
-        time.sleep(3)
-        print("Threads: " + str(threading.active_count()))
         sys.exit(0)
 
 
