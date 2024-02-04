@@ -56,7 +56,7 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
         depot_TW.append(TWL[x][0, :] / tw_scaler)
         PL.append(create_price(TML[x], DUL[x]))
 
-        CL[x] = numpy.delete(CL[x], 0, 0)
+        CL[x] = numpy.delete(CL[x], 0, 0) / 100
         TWL[x] = numpy.delete(TWL[x], 0, 0) / tw_scaler
         TML[x] = TML[x] / tw_scaler
         DL[x] = numpy.delete(DL[x], 0, 0) / VCL[x]

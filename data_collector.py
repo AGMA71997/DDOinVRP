@@ -46,13 +46,12 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
                                    compelled_edges)
 
     added_orders = initial_orders
-    max_iter = 2000
+    max_iter = 500
     iteration = 0
     # Iterate until optimality is reached
     try:
         while iteration < max_iter:
             master_problem.solve()
-            print("The objective value is: " + str(master_problem.model.objval))
             duals = master_problem.retain_duals()
 
             coords_list.append(coords)
@@ -73,20 +72,23 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
                 ordered_route, reduced_cost, top_labels = subproblem.solve()
             time_22 = time.time()
 
-            print("RC is " + str(reduced_cost))
-            print("Total solving time for PP is: " + str(time_22 - time_11))
-            print(ordered_route)
             # subproblem.render_solution(ordered_route)
             cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
             route = convert_ordered_route(ordered_route, num_customers)
             iteration += 1
-            print("Iteration: " + str(iteration))
+            if iteration % 100 == 0:
+                print("Iteration: " + str(iteration))
+                # print("RC is " + str(reduced_cost))
+                print("Total solving time for PP is: " + str(time_22 - time_11))
+                print(ordered_route)
+                print("The objective value is: " + str(master_problem.model.objval))
+
             # Check if the candidate column is optimal
             if reduced_cost < 0 and ordered_route not in added_orders:
                 # Add the column to the master problem
                 master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
                 added_orders.append(ordered_route)
-                print("Another " + str(len(top_labels)) + " are added.")
+                # print("Another " + str(len(top_labels)) + " are added.")
                 for x in range(len(top_labels)):
                     label = top_labels[x][0]
                     cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
@@ -110,7 +112,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--file_sequence', type=str)
+    parser.add_argument('--file_sequence', type=str, default="")
     parser.add_argument('--num_customers', type=int, default=100)
     parser.add_argument('--heuristic', type=bool, default=True)
     args = parser.parse_args()
