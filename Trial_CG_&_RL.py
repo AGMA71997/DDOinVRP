@@ -2,7 +2,7 @@ from instance_generator import Instance_Generator
 from column_generation import initialize_columns, check_route_feasibility, create_forbidden_edges_list
 from column_generation import MasterProblem, convert_ordered_route
 import time
-from ESPRCTW_RL_trainer import calculate_price
+from utils import create_price
 
 import torch
 import json
@@ -54,13 +54,11 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
         duals = master_problem.retain_duals()
 
         env = Env(**env_params)
-        prices = calculate_price(time_matrix, duals)
+        prices = create_price(time_matrix, duals)
 
         env.declare_problem(coords, demands, time_windows,
                             duals, service_times, time_matrix, prices, vehicle_capacity)
         model = Model(**model_params)
-        prices = prices * -1
-
         device = torch.device('cpu')
         checkpoint_fullname = '{path}/checkpoint-{epoch}.pt'.format(**model_load)
         checkpoint = torch.load(checkpoint_fullname, map_location=device)
@@ -81,7 +79,6 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
         print(best_route)
         print("The number of columns generated is: " + str(len(ordered_routes)))
 
-        # Check if the candidate column is optimal
         if len(ordered_routes) > 0:
             for ordered_route in ordered_routes:
                 if ordered_route not in added_orders:
@@ -122,7 +119,7 @@ class ESPRCTW_RL_solver(object):
                     [self.prices[int(decisions[r, x, y]), int(decisions[r + 1, x, y])] for r in
                      range(len(decisions) - 1)])
 
-        return real_rewards
+        return real_rewards * -1
 
     def generate_columns(self):
         self.model.eval()
@@ -140,13 +137,11 @@ class ESPRCTW_RL_solver(object):
             # shape: (max episode length, batch, pomo)
             state, reward, done = self.env.step(selected)
             # shape: (batch, pomo)
-
         real_rewards = self.return_real_reward(decisions)
 
         best_rewards_indexes = real_rewards.argmin(dim=1)
-        best_column = []
-        for x in range(len(decisions)):
-            best_column.append(int(decisions[x, 0, best_rewards_indexes[0]]))
+
+        best_column = torch.tensor(decisions[:, 0, best_rewards_indexes[0]], dtype=torch.int).tolist()
 
         negative_reduced_costs = real_rewards < -0.0000001
         indices = negative_reduced_costs.nonzero()
@@ -169,7 +164,7 @@ def main():
 
     results = []
     for experiment in range(1):
-        num_customers = 20
+        num_customers = 100
         # instance = config["Solomon Dataset"] + "/C101.txt"
         # print("The following instance is used: " + instance)
         print("This instance has " + str(num_customers) + " customers.")
