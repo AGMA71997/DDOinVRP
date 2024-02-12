@@ -46,7 +46,8 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
                                    compelled_edges)
 
     added_orders = initial_orders
-    max_iter = 500
+    reoptimize = True
+    max_iter = 100
     iteration = 0
     # Iterate until optimality is reached
     try:
@@ -75,6 +76,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
             # subproblem.render_solution(ordered_route)
             cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
             route = convert_ordered_route(ordered_route, num_customers)
+
             iteration += 1
             if iteration % 100 == 0:
                 print("Iteration: " + str(iteration))
@@ -98,8 +100,10 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
             else:
                 # Optimality has been reached
                 print("Addition Failed")
+                reoptimize = False
                 break
-
+        if reoptimize:
+            master_problem.solve()
         sol, obj = master_problem.extract_solution()
         routes, costs, orders = master_problem.extract_columns()
         master_problem.__delete__()
@@ -137,6 +141,7 @@ def main():
     for instance in os.listdir(directory):
         if instance.startswith(args.file_sequence):
             file = directory + "/" + instance
+            print(file)
             VRP_instance = Instance_Generator(file_path=file, config=config)
 
             forbidden_edges = []

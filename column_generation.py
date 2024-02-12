@@ -40,6 +40,7 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
                                    compelled_edges)
 
     added_orders = initial_orders
+    reoptimize = True
     max_iter = 500
     iteration = 0
     try:
@@ -77,9 +78,12 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
                     added_orders.append(label)
             else:
                 # Optimality has been reached
+                reoptimize = False
                 print("Addition Failed")
                 break
 
+        if reoptimize:
+            master_problem.solve()
         sol, obj = master_problem.extract_solution()
         routes, costs, orders = master_problem.extract_columns()
         master_problem.__delete__()
@@ -168,7 +172,7 @@ class MasterProblem:
         try:
             return [(key, self.y[key].x, self.orders[key]) for key in self.y if self.y[key].x > 0], self.model.objval
         except:
-            print(self.model.getAttr("Status"))
+            print("The model failed with status:" + str(self.model.getAttr("Status")))
             return [], math.inf
 
     def extract_columns(self):
