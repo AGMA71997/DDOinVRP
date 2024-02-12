@@ -47,7 +47,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
     added_orders = initial_orders
     reoptimize = True
-    max_iter = 100
+    max_iter = 2000
     iteration = 0
     # Iterate until optimality is reached
     try:

@@ -22,7 +22,7 @@ from ESPRCTWModel import ESPRCTWModel as Model
 def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, demands, time_windows,
                                            num_customers, service_times, forbidden_edges, compelled_edges,
                                            initial_routes, initial_costs, initial_orders,
-                                           model_params, env_params, model_load):
+                                           model_params, env_params, model_load, max_dual, solomon):
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
 
@@ -57,7 +57,7 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
         prices = create_price(time_matrix, duals)
 
         env.declare_problem(coords, demands, time_windows,
-                            duals, service_times, time_matrix, prices, vehicle_capacity)
+                            duals, service_times, time_matrix, prices, vehicle_capacity, max_dual, solomon)
         model = Model(**model_params)
         device = torch.device('cpu')
         checkpoint_fullname = '{path}/checkpoint-{epoch}.pt'.format(**model_load)
@@ -163,7 +163,9 @@ def main():
         config = json.load(f)
 
     results = []
-    for experiment in range(1):
+    solomon = True
+    max_dual = 100 #?
+    for experiment in range(50):
         num_customers = 100
         # instance = config["Solomon Dataset"] + "/C101.txt"
         # print("The following instance is used: " + instance)
@@ -196,8 +198,8 @@ def main():
                       'pomo_size': 20}
 
         model_load = {
-            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/saved_esprctw100_model_heuristic_data_prop_train',
-            'epoch': 100}
+            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/new_model',
+            'epoch': 30}
 
         time_1 = time.time()
         sol, obj, routes, costs, orders = RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix,
@@ -208,7 +210,8 @@ def main():
                                                                                  compelled_edges,
                                                                                  initial_routes, initial_costs,
                                                                                  initial_orders, model_params,
-                                                                                 env_params, model_load)
+                                                                                 env_params, model_load, max_dual,
+                                                                                 solomon)
         time_2 = time.time()
 
         print("time: " + str(time_2 - time_1))

@@ -18,7 +18,7 @@ def create_price(time_matrix, duals):
     return prices
 
 
-def data_iterator(config, POMO, num_customers, heuristic):
+def data_iterator(config, POMO, num_customers, heuristic, solomon):
     if heuristic:
         directory = config["storge_directory_raw_heuristic"] + "/" + str(num_customers)
     else:
@@ -40,7 +40,7 @@ def data_iterator(config, POMO, num_customers, heuristic):
     print(data_count)
 
     if POMO:
-        process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config, heuristic)
+        process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config, heuristic, solomon)
     '''else:
         os.chdir(config['SB3 Data'])
         pickle_out = open('ESPRCTW_Data_' + str(num_customers), 'wb')
@@ -48,18 +48,21 @@ def data_iterator(config, POMO, num_customers, heuristic):
         pickle_out.close()'''
 
 
-def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config, heuristic):
+def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config, heuristic, solomon):
     depot_CL = []
     depot_TW = []
     PL = []
     max_dual = 0
+    cl_scaler = 1
     for x in range(len(CL)):
         depot_CL.append(CL[x][0, :])
         tw_scaler = TWL[x][0, 1]
         depot_TW.append(TWL[x][0, :] / tw_scaler)
         PL.append(create_price(TML[x], DUL[x]))
 
-        CL[x] = numpy.delete(CL[x], 0, 0) / 100
+        if solomon:
+            cl_scaler = 100
+        CL[x] = numpy.delete(CL[x], 0, 0) / cl_scaler
         TWL[x] = numpy.delete(TWL[x], 0, 0) / tw_scaler
         TML[x] = TML[x] / tw_scaler
         DL[x] = numpy.delete(DL[x], 0, 0) / VCL[x]
@@ -71,6 +74,7 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
         max_val = numpy.max(PL[x])
         PL[x] = PL[x] / max(abs(max_val), abs(min_val))
 
+    print(max_dual)
     depot_CL = torch.tensor(numpy.stack(depot_CL), dtype=torch.float32)
     depot_TW = torch.tensor(numpy.stack(depot_TW), dtype=torch.float32)
     CL = torch.tensor(numpy.stack(CL), dtype=torch.float32)
@@ -191,12 +195,13 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 def main():
     POMO = True
     heuristic = True
+    solomon = True
     num_customers = 100
     file = "config.json"
     with open(file, 'r') as f:
         config = json.load(f)
 
-    data_iterator(config, POMO, num_customers, heuristic)
+    data_iterator(config, POMO, num_customers, heuristic, solomon)
 
 
 if __name__ == "__main__":
