@@ -2,7 +2,7 @@ from utils import *
 from column_generation import MasterProblem, Subproblem
 import sys
 import json
-import threading
+from graph_reduction import Node_Reduction
 
 from instance_generator import Instance_Generator
 import time
@@ -63,15 +63,30 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
             service_times_list.append(service_times)
             duals_list.append(duals)
 
+            prices = create_price(time_matrix, duals)
+
+            NR = Node_Reduction(duals, coords)
+            red_cor = NR.dual_based_elimination(time_matrix)
+            red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices, cus_mapping = reshape_problem(red_cor,
+                                                                                                              demands,
+                                                                                                              time_windows,
+                                                                                                              duals,
+                                                                                                              service_times,
+                                                                                                              time_matrix,
+                                                                                                              prices)
+            N = len(red_cor) - 1
+
             # Consider saving problem parameters here in pickle files for comparison.
             time_11 = time.time()
-            subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows,
-                                    duals, service_times, forbidden_edges)
+            subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
+                                    red_duals, red_sts, forbidden_edges)
             if heuristic:
                 ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic()
             else:
                 ordered_route, reduced_cost, top_labels = subproblem.solve()
             time_22 = time.time()
+
+            ordered_route = remap_route(ordered_route, cus_mapping)
 
             # subproblem.render_solution(ordered_route)
             cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
@@ -93,6 +108,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
                 # print("Another " + str(len(top_labels)) + " are added.")
                 for x in range(len(top_labels)):
                     label = top_labels[x][0]
+                    label = remap_route(label, cus_mapping)
                     cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
                     route = convert_ordered_route(label, num_customers)
                     master_problem.add_columns([route], [cost], [label], forbidden_edges, compelled_edges)

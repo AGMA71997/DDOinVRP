@@ -1,10 +1,8 @@
 import sys
-import threading
 
 import numpy as np
 import gurobipy as gb
 from instance_generator import Instance_Generator
-import math
 import random
 import time
 from threading import Thread
@@ -48,6 +46,7 @@ def solve_relaxed_vrp_with_time_windows(vehicle_capacity, time_matrix, demands, 
             master_problem.solve()
             print("The objective value is: " + str(master_problem.model.objval))
             duals = master_problem.retain_duals()
+            # print([x+1 for x in range(len(duals)) if duals[x] > 0])
             # Consider saving problem parameters here in pickle files for comparison.
             time_11 = time.time()
             subproblem = Subproblem(num_customers, vehicle_capacity, time_matrix, demands, time_windows,
@@ -199,11 +198,7 @@ class Subproblem:
         self.forbidden_edges = forbidden_edges
         self.max_column_count = 1
 
-        duals.insert(0, 0)
-        duals = np.array(duals)
-        duals = duals.reshape((len(duals), 1))
-        self.price = time_matrix - duals
-        np.fill_diagonal(self.price, 0)
+        self.price = create_price(time_matrix, duals) * -1
 
         self.terminate = None
 
@@ -579,19 +574,19 @@ class Subproblem:
         current_time = 0
         for x in range(len(solution) - 1):
             print((solution[x], solution[x + 1]))
-            print("With price: " + str(self.price[solution[x], solution[x + 1]]))
-            print("Is among the top " + str(N) + " edges: " + str((solution[x], solution[x + 1]) in best_edges))
-            print("Resource consumption: ")
-            consumed_time = self.time_matrix[solution[x], solution[x + 1]] + \
-                            max(self.time_windows[solution[x + 1], 0] - \
-                                (current_time + self.time_matrix[solution[x], solution[x + 1]]),
-                                0) + self.service_times[solution[x + 1]]
-            current_time += consumed_time
-            scaled_time = consumed_time / self.time_windows[0, 1]
-            scaled_demand = self.demands[x + 1] / self.vehicle_capacity
-            scaled_price = (self.price[solution[x], solution[x + 1]] - min_price) / (max_price - min_price)
-            print("Time: " + str(scaled_time))
-            print("Demand: " + str(scaled_demand))
+            # print("With price: " + str(self.price[solution[x], solution[x + 1]]))
+            # print("Is among the top " + str(N) + " edges: " + str((solution[x], solution[x + 1]) in best_edges))
+            # print("Resource consumption: ")
+            # consumed_time = self.time_matrix[solution[x], solution[x + 1]] + \
+            #                 max(self.time_windows[solution[x + 1], 0] - \
+            #                     (current_time + self.time_matrix[solution[x], solution[x + 1]]),
+            #                     0) + self.service_times[solution[x + 1]]
+            # current_time += consumed_time
+            # scaled_time = consumed_time / self.time_windows[0, 1]
+            # scaled_demand = self.demands[x + 1] / self.vehicle_capacity
+            # scaled_price = (self.price[solution[x], solution[x + 1]] - min_price) / (max_price - min_price)
+            # print("Time: " + str(scaled_time))
+            # print("Demand: " + str(scaled_demand))
 
 
 class Bound_Threader(Thread):

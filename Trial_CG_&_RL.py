@@ -1,8 +1,7 @@
 from instance_generator import Instance_Generator
-from column_generation import initialize_columns, check_route_feasibility, create_forbidden_edges_list
-from column_generation import MasterProblem, convert_ordered_route
+from column_generation import MasterProblem
 import time
-from utils import create_price
+from utils import *
 
 import torch
 import json
@@ -13,6 +12,8 @@ import statistics
 
 import matplotlib.pyplot as pp
 
+from graph_reduction import Node_Reduction
+
 sys.path.insert(0, r'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO')
 sys.path.insert(0, r'C:/Users/abdug/Python/POMO-implementation/ESPRCTW')
 from ESPRCTWEnv import ESPRCTWEnv as Env
@@ -22,7 +23,7 @@ from ESPRCTWModel import ESPRCTWModel as Model
 def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, demands, time_windows,
                                            num_customers, service_times, forbidden_edges, compelled_edges,
                                            initial_routes, initial_costs, initial_orders,
-                                           model_params, env_params, model_load, max_dual, solomon):
+                                           model_params, model_load, max_dual, solomon):
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
 
@@ -53,28 +54,46 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
         print("The objective value of the RMP is: " + str(master_problem.model.objval))
         duals = master_problem.retain_duals()
 
-        env = Env(**env_params)
         prices = create_price(time_matrix, duals)
 
-        env.declare_problem(coords, demands, time_windows,
-                            duals, service_times, time_matrix, prices, vehicle_capacity, max_dual, solomon)
+        NR = Node_Reduction(duals, coords)
+        red_cor = NR.dual_based_elimination(time_matrix)
+        red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices, cus_mapping = reshape_problem(red_cor,
+                                                                                                          demands,
+                                                                                                          time_windows,
+                                                                                                          duals,
+                                                                                                          service_times,
+                                                                                                          time_matrix,
+                                                                                                          prices)
+
+        N = len(red_cor) - 1
+        env_params = {'problem_size': N,
+                      'pomo_size': N}
+        env = Env(**env_params)
+        env.declare_problem(red_cor, red_dem, red_tws,
+                            red_duals, red_sts, red_tms, red_prices, vehicle_capacity, max_dual, solomon)
+
         model = Model(**model_params)
         device = torch.device('cpu')
         checkpoint_fullname = '{path}/checkpoint-{epoch}.pt'.format(**model_load)
         checkpoint = torch.load(checkpoint_fullname, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
-        pp_rl_solver = ESPRCTW_RL_solver(env, model, prices)
 
+        pp_rl_solver = ESPRCTW_RL_solver(env, model, red_prices)
         ordered_routes, best_route, best_reward = pp_rl_solver.generate_columns()
 
         for ordered_route in ordered_routes:
             while ordered_route[-1] == ordered_route[-2]:
                 ordered_route.pop()
+            ordered_route = remap_route(ordered_route, cus_mapping)
             if not check_route_feasibility(ordered_route, time_matrix, time_windows, service_times, demands,
                                            vehicle_capacity):
                 print("Infeasible Route Detected")
                 sys.exit(0)
 
+        while best_route[-1] == best_route[-2]:
+            best_route.pop()
+        best_route = remap_route(best_route, cus_mapping)
         print("RC is " + str(best_reward))
         print(best_route)
         print("The number of columns generated is: " + str(len(ordered_routes)))
@@ -163,8 +182,8 @@ def main():
         config = json.load(f)
 
     results = []
-    solomon = True
-    max_dual = 100 #?
+    solomon = False
+    max_dual = 10
     for experiment in range(50):
         num_customers = 100
         # instance = config["Solomon Dataset"] + "/C101.txt"
@@ -194,12 +213,9 @@ def main():
             'eval_type': 'argmax',
         }
 
-        env_params = {'problem_size': num_customers,
-                      'pomo_size': 20}
-
         model_load = {
-            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/new_model',
-            'epoch': 30}
+            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/saved_esprctw100_model_heuristic_data_prop_train',
+            'epoch': 100}
 
         time_1 = time.time()
         sol, obj, routes, costs, orders = RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix,
@@ -210,7 +226,7 @@ def main():
                                                                                  compelled_edges,
                                                                                  initial_routes, initial_costs,
                                                                                  initial_orders, model_params,
-                                                                                 env_params, model_load, max_dual,
+                                                                                 model_load, max_dual,
                                                                                  solomon)
         time_2 = time.time()
 

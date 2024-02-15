@@ -3,19 +3,70 @@ import os
 import numpy
 import torch
 import json
+import math
 import matplotlib.pyplot as pp
 
 
 def create_price(time_matrix, duals):
-    duals = duals.copy()
     if len(duals) < len(time_matrix):
         duals.insert(0, 0)
-    assert duals[0] == 0
+    assert duals[0] == 0 and len(duals) == len(time_matrix)
     duals = numpy.array(duals)
     duals = duals.reshape((len(duals), 1))
     prices = (time_matrix - duals) * -1
     numpy.fill_diagonal(prices, 0)
     return prices
+
+
+def reshape_problem(coords, demands, time_windows, duals, service_times, time_matrix, prices):
+    coords = numpy.copy(coords)
+    demands = numpy.copy(demands)
+    time_windows = numpy.copy(time_windows)
+    duals = duals.copy()
+    service_times = numpy.copy(service_times)
+    time_matrix = numpy.copy(time_matrix)
+    prices = numpy.copy(prices)
+
+    remaining_customers = []
+    for x in range(1, len(coords)):
+        if coords[x, 0] == math.inf:
+            demands[x] = math.inf
+            time_windows[x, :] = math.inf
+            duals[x] = math.inf
+            service_times[x] = math.inf
+            time_matrix[x, :] = math.inf
+            time_matrix[:, x] = math.inf
+            prices[x, :] = math.inf
+            prices[:, x] = math.inf
+        else:
+            remaining_customers.append(x)
+
+    cus_mapping = {}
+    for x in range(len(remaining_customers)):
+        cus_mapping[x + 1] = remaining_customers[x]
+
+    coords = coords[coords[:, 0] != math.inf]
+    demands = demands[demands[:] != math.inf]
+    time_windows = time_windows[time_windows[:, 0] != math.inf]
+    duals = [duals[x] for x in range(len(duals)) if duals[x] != math.inf]
+    service_times = service_times[service_times[:] != math.inf]
+    time_matrix = time_matrix[time_matrix[:, 0] != math.inf]
+    mask = (time_matrix == math.inf)
+    idx = mask.any(axis=0)
+    time_matrix = time_matrix[:, ~idx]
+    prices = prices[prices[:, 0] != math.inf]
+    mask = (prices == math.inf)
+    idx = mask.any(axis=0)
+    prices = prices[:, ~idx]
+
+    # print("The problem has been reduced to size: " + str(len(coords) - 1))
+    return coords, demands, time_windows, duals, service_times, time_matrix, prices, cus_mapping
+
+
+def remap_route(route, cus_mapping):
+    for x in range(1, len(route) - 1):
+        route[x] = cus_mapping[route[x]]
+    return route
 
 
 def data_iterator(config, POMO, num_customers, heuristic, solomon):
@@ -195,13 +246,13 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 def main():
     POMO = True
     heuristic = True
-    solomon = True
+    solomon = False
     num_customers = 100
     file = "config.json"
     with open(file, 'r') as f:
         config = json.load(f)
 
-    data_iterator(config, POMO, num_customers, heuristic, solomon)
+    # data_iterator(config, POMO, num_customers, heuristic, solomon)
 
 
 if __name__ == "__main__":
