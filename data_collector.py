@@ -136,7 +136,7 @@ def main():
     parser.add_argument('--num_customers', type=int, default=100)
     parser.add_argument('--heuristic', type=bool, default=True)
     args = parser.parse_args()
-    num_customers = 20 # args.num_customers
+    num_customers = args.num_customers
 
     global heuristic
     heuristic = args.heuristic
@@ -157,10 +157,8 @@ def main():
     for instance in os.listdir(directory):
         if instance.startswith(args.file_sequence):
             file = directory + "/" + instance
-            # print(file)
-            # VRP_instance = Instance_Generator(file_path=file, config=config)
-            VRP_instance = Instance_Generator(N=num_customers)
-
+            print(file)
+            VRP_instance = Instance_Generator(file_path=file, config=config)
             forbidden_edges = []
             compelled_edges = []
             initial_routes = []
