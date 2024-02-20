@@ -1,5 +1,5 @@
 from instance_generator import Instance_Generator
-from column_generation import MasterProblem
+from column_generation import MasterProblem, Subproblem
 import time
 from utils import *
 
@@ -67,11 +67,11 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
                                                                                                           prices)
 
         N = len(red_cor) - 1
-        env_params = {'problem_size': N,
-                      'pomo_size': N}
+        env_params = {'problem_size': num_customers,
+                      'pomo_size': num_customers}
         env = Env(**env_params)
-        env.declare_problem(red_cor, red_dem, red_tws,
-                            red_duals, red_sts, red_tms, red_prices, vehicle_capacity, max_dual, solomon)
+        env.declare_problem(coords, demands, time_windows,
+                            duals, service_times, time_matrix, prices, vehicle_capacity, max_dual, solomon)
 
         model = Model(**model_params)
         device = torch.device('cpu')
@@ -79,13 +79,13 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
         checkpoint = torch.load(checkpoint_fullname, map_location=device)
         model.load_state_dict(checkpoint['model_state_dict'])
 
-        pp_rl_solver = ESPRCTW_RL_solver(env, model, red_prices)
+        pp_rl_solver = ESPRCTW_RL_solver(env, model, prices)
         ordered_routes, best_route, best_reward = pp_rl_solver.generate_columns()
 
         for ordered_route in ordered_routes:
             while ordered_route[-1] == ordered_route[-2]:
                 ordered_route.pop()
-            ordered_route = remap_route(ordered_route, cus_mapping)
+            # ordered_route = remap_route(ordered_route, cus_mapping)
             if not check_route_feasibility(ordered_route, time_matrix, time_windows, service_times, demands,
                                            vehicle_capacity):
                 print("Infeasible Route Detected")
@@ -93,7 +93,7 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
 
         while best_route[-1] == best_route[-2]:
             best_route.pop()
-        best_route = remap_route(best_route, cus_mapping)
+        # best_route = remap_route(best_route, cus_mapping)
         print("RC is " + str(best_reward))
         print(best_route)
         print("The number of columns generated is: " + str(len(ordered_routes)))
@@ -109,9 +109,22 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
                     master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
                     added_orders.append(ordered_route)
         else:
-            # Optimality has been reached
-            print("No columns with negative reduced cost found.")
-            break
+            print("CG is being used")
+            subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
+                                    red_duals, red_sts, forbidden_edges)
+            ordered_route, reduced_cost, top_labels = subproblem.solve()
+            print("reduced cost of generated column is: "+str(reduced_cost))
+            ordered_route = remap_route(ordered_route, cus_mapping)
+            cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
+            route = convert_ordered_route(ordered_route, num_customers)
+            if reduced_cost < 0 and ordered_route not in added_orders:
+                # Add the column to the master problem
+                master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
+                added_orders.append(ordered_route)
+            else:
+                # Optimality has been reached
+                print("No columns with negative reduced cost found.")
+                break
 
     sol, obj = master_problem.extract_solution()
     routes, costs, orders = master_problem.extract_columns()
@@ -182,14 +195,15 @@ def main():
         config = json.load(f)
 
     results = []
-    solomon = False
-    max_dual = 10
-    for experiment in range(50):
+    solomon = True
+    max_dual = 308.5
+    directory = config["Solomon Test Dataset"]
+    for instance in os.listdir(directory):
+        file = directory + "/" + instance
+        print(file)
         num_customers = 100
-        # instance = config["Solomon Dataset"] + "/C101.txt"
-        # print("The following instance is used: " + instance)
-        print("This instance has " + str(num_customers) + " customers.")
-        VRP_instance = Instance_Generator(N=num_customers)
+
+        VRP_instance = Instance_Generator(file_path=file, config=config)
         time_matrix = VRP_instance.time_matrix
         time_windows = VRP_instance.time_windows
         demands = VRP_instance.demands
@@ -214,8 +228,8 @@ def main():
         }
 
         model_load = {
-            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/saved_esprctw100_model_heuristic_data_prop_train',
-            'epoch': 100}
+            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/saved_esprctw20_model_heuristic_data',
+            'epoch': 30}
 
         time_1 = time.time()
         sol, obj, routes, costs, orders = RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix,
@@ -236,6 +250,7 @@ def main():
         print("number of columns: " + str(len(orders)))
 
         results.append(obj)
+        break
 
     mean_obj = statistics.mean(results)
     std_obj = statistics.stdev(results)

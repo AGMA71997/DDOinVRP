@@ -252,7 +252,7 @@ def main():
     with open(file, 'r') as f:
         config = json.load(f)
 
-    # data_iterator(config, POMO, num_customers, heuristic, solomon)
+    data_iterator(config, POMO, num_customers, heuristic, solomon)
 
 
 if __name__ == "__main__":
