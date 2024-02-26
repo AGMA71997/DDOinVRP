@@ -26,7 +26,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
 
-    if initial_routes == []:
+    if not initial_routes:
         initial_routes, initial_costs, initial_orders = initialize_columns(num_customers, vehicle_capacity, time_matrix,
                                                                            service_times, time_windows,
                                                                            demands)
@@ -47,7 +47,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
     added_orders = initial_orders
     reoptimize = True
-    max_iter = 2000
+    max_iter = 1000
     iteration = 0
     # Iterate until optimality is reached
     try:
@@ -63,10 +63,10 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
             service_times_list.append(service_times)
             duals_list.append(duals)
 
-            prices = create_price(time_matrix, duals)
+            prices = create_price(time_matrix, duals)*-1
 
             NR = Node_Reduction(duals, coords)
-            red_cor = NR.dual_based_elimination(time_matrix)
+            red_cor = NR.dual_based_elimination()
             red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices, cus_mapping = reshape_problem(red_cor,
                                                                                                               demands,
                                                                                                               time_windows,
@@ -93,12 +93,13 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
             route = convert_ordered_route(ordered_route, num_customers)
 
             iteration += 1
-            if iteration % 100 == 0:
+            if iteration % 10 == 0:
                 print("Iteration: " + str(iteration))
-                # print("RC is " + str(reduced_cost))
                 print("Total solving time for PP is: " + str(time_22 - time_11))
-                print(ordered_route)
+                print("RC is " + str(reduced_cost))
+                print("Best route: "+str(ordered_route))
                 print("The objective value is: " + str(master_problem.model.objval))
+                print("The total number of generated columns is: "+str(len(top_labels)+1))
 
             # Check if the candidate column is optimal
             if reduced_cost < 0 and ordered_route not in added_orders:
@@ -107,7 +108,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
                 added_orders.append(ordered_route)
                 # print("Another " + str(len(top_labels)) + " are added.")
                 for x in range(len(top_labels)):
-                    label = top_labels[x][0]
+                    label = top_labels[x]
                     label = remap_route(label, cus_mapping)
                     cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
                     route = convert_ordered_route(label, num_customers)
@@ -157,6 +158,7 @@ def main():
     for instance in os.listdir(directory):
         if instance.startswith(args.file_sequence):
             file = directory + "/" + instance
+            file = directory + "/" + "RC204.txt"
             print(file)
             VRP_instance = Instance_Generator(file_path=file, config=config)
             forbidden_edges = []

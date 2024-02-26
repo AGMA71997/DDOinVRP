@@ -57,7 +57,8 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
         prices = create_price(time_matrix, duals)
 
         NR = Node_Reduction(duals, coords)
-        red_cor = NR.dual_based_elimination(time_matrix)
+        red_cor = NR.dual_based_elimination()
+
         red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices, cus_mapping = reshape_problem(red_cor,
                                                                                                           demands,
                                                                                                           time_windows,
@@ -113,7 +114,7 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
                                     red_duals, red_sts, forbidden_edges)
             ordered_route, reduced_cost, top_labels = subproblem.solve()
-            print("reduced cost of generated column is: "+str(reduced_cost))
+            print("reduced cost of generated column is: " + str(reduced_cost))
             ordered_route = remap_route(ordered_route, cus_mapping)
             cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
             route = convert_ordered_route(ordered_route, num_customers)

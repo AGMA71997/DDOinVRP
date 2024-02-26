@@ -10,27 +10,36 @@ class Arc_Reduction(object):
         self.duals = duals.copy()
         self.N = len(self.prices)
 
-    def BE_1(self, time_matrix, alpha=0.5):
+    def BE1(self, time_matrix, alpha=0.5):
         threshold = alpha * max(self.duals)
         self.prices[time_matrix > threshold] = math.inf
         return self.prices
 
-    def BE2(self, alpha=0.5):
+    def BE2(self, alpha=0.25):
         edge_count = math.ceil(alpha * self.N ** 2)
         indices = self.prices.ravel().argsort()
 
         relevant_prices = self.prices.ravel()[indices[0:edge_count]]
 
         for x in range(self.N):
-            for y in range(self.N):
+            for y in range(1, self.N):
                 if self.prices[x, y] not in relevant_prices:
                     self.prices[x, y] = math.inf
         return self.prices
 
-    def BE3(self):
-        pass
+    def BE3(self, alpha=0.5):
+        M = math.ceil((self.N - 2)*alpha)
 
-    def BN(self, beta=0.8):
+        for i in range(self.N):
+            cus_prices = numpy.sort(self.prices[i, :])
+            cus_prices = cus_prices[0:M]
+            for j in range(1, self.N):
+                if self.prices[i, j] not in cus_prices:
+                    self.prices[i, j] = math.inf
+
+        return self.prices
+
+    def BN(self, beta=0.9):
 
         probs = {}
         max_dual = max(self.duals)
@@ -39,16 +48,31 @@ class Arc_Reduction(object):
             probs[x] = (self.duals[x] - min_dual) / (max_dual - min_dual) * beta
 
         for x in range(self.N):
-            for y in range(self.N):
-                if y > 0:
-                    random_var = numpy.random.random()
-                    if random_var > probs[y]:
-                        self.prices[x, y] = math.inf
+            for y in range(1, self.N):
+                random_var = numpy.random.random()
+                if random_var > probs[y]:
+                    self.prices[x, y] = math.inf
 
         return self.prices
 
     def BP(self):
         pass
+
+    def euclidean_diff_to_dual_ratio(self, time_matrix):
+        for i in range(self.N):
+            for j in range(1, self.N):
+                if self.prices[i, j] > 0:
+                    arc_mute = True
+                    for k in range(self.N):
+                        time_diff = time_matrix[i, j] + time_matrix[j, k] - time_matrix[i, k]
+                        if time_diff < self.duals[j]:
+                            arc_mute = False
+                            break
+
+                    if arc_mute:
+                        self.prices[i, j] = math.inf
+
+        return self.prices
 
 
 class Node_Reduction(object):
@@ -57,9 +81,15 @@ class Node_Reduction(object):
         self.coords = numpy.copy(coords)
         self.N = len(self.duals)
 
-    def dual_based_elimination(self, time_matrix):
+    def dual_based_elimination(self):
         for x in range(1, self.N):
-            smallest_tt = numpy.min(time_matrix[x, :])
+            if self.duals[x] == 0:
+                self.coords[x, :] = math.inf
+        return self.coords
+
+    def price_based_elimination(self, time_matrix):
+        for x in range(1, self.N):
+            smallest_tt = numpy.min(time_matrix[:, x])
             if self.duals[x] < smallest_tt:
                 self.coords[x, :] = math.inf
         return self.coords
@@ -83,7 +113,7 @@ def main():
     # print(reduced_prices)
 
     NC = Node_Reduction(duals, coords)
-    reduced_nodes = NC.dual_based_elimination(time_matrix)
+    reduced_nodes = NC.price_based_elimination(time_matrix)
     print(reduced_nodes)
 
 
