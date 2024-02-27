@@ -12,7 +12,6 @@ def create_price(time_matrix, duals):
         duals.insert(0, 0)
     assert duals[0] == 0 and len(duals) == len(time_matrix)
     duals = numpy.array(duals)
-    duals = duals.reshape((1, len(duals)))
     prices = (time_matrix - duals) * -1
     numpy.fill_diagonal(prices, math.inf)
     return prices

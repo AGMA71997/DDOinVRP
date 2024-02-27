@@ -1,3 +1,5 @@
+import math
+
 from utils import *
 from column_generation import MasterProblem, Subproblem
 import sys
@@ -23,6 +25,9 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
     service_times = VRP_instance.service_times
     num_customers = VRP_instance.N
 
+    global arc_red
+    arc_red = True
+
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
 
@@ -47,8 +52,11 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
     added_orders = initial_orders
     reoptimize = True
-    max_iter = 1000
+    max_iter = 5000
     iteration = 0
+    consecutive_count = 0
+    arc_red = True
+    obj_val_prev = math.inf
     # Iterate until optimality is reached
     try:
         while iteration < max_iter:
@@ -63,10 +71,10 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
             service_times_list.append(service_times)
             duals_list.append(duals)
 
-            prices = create_price(time_matrix, duals)*-1
+            prices = create_price(time_matrix, duals) * -1
 
             NR = Node_Reduction(duals, coords)
-            red_cor = NR.dual_based_elimination()
+            red_cor = NR.price_based_elimination(time_matrix)
             red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices, cus_mapping = reshape_problem(red_cor,
                                                                                                               demands,
                                                                                                               time_windows,
@@ -78,10 +86,13 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
             # Consider saving problem parameters here in pickle files for comparison.
             time_11 = time.time()
+            if time_11 - start_time >= 3 * 3600:
+                print("TIME LIMIT REACHED")
+                break
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
                                     red_duals, red_sts, forbidden_edges)
             if heuristic:
-                ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic()
+                ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red)
             else:
                 ordered_route, reduced_cost, top_labels = subproblem.solve()
             time_22 = time.time()
@@ -97,9 +108,17 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
                 print("Iteration: " + str(iteration))
                 print("Total solving time for PP is: " + str(time_22 - time_11))
                 print("RC is " + str(reduced_cost))
-                print("Best route: "+str(ordered_route))
-                print("The objective value is: " + str(master_problem.model.objval))
-                print("The total number of generated columns is: "+str(len(top_labels)+1))
+                print("Best route: " + str(ordered_route))
+                obj_val = master_problem.model.objval
+                if arc_red:
+                    if obj_val == obj_val_prev:
+                        consecutive_count += 1
+                        if consecutive_count == 10:
+                            arc_red = False
+
+                obj_val_prev = obj_val
+                print("The objective value is: " + str(obj_val))
+                print("The total number of generated columns is: " + str(len(top_labels) + 1))
 
             # Check if the candidate column is optimal
             if reduced_cost < 0 and ordered_route not in added_orders:
@@ -115,10 +134,13 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
                     master_problem.add_columns([route], [cost], [label], forbidden_edges, compelled_edges)
                     added_orders.append(label)
             else:
-                # Optimality has been reached
-                print("Addition Failed")
-                reoptimize = False
-                break
+                if arc_red:
+                    arc_red = False
+                else:
+                    # Optimality has been reached
+                    print("Addition Failed")
+                    reoptimize = False
+                    break
         if reoptimize:
             master_problem.solve()
         sol, obj = master_problem.extract_solution()
@@ -158,7 +180,6 @@ def main():
     for instance in os.listdir(directory):
         if instance.startswith(args.file_sequence):
             file = directory + "/" + instance
-            file = directory + "/" + "RC204.txt"
             print(file)
             VRP_instance = Instance_Generator(file_path=file, config=config)
             forbidden_edges = []
@@ -166,7 +187,8 @@ def main():
             initial_routes = []
             initial_costs = []
             initial_orders = []
-            time_1 = time.time()
+            global start_time
+            start_time = time.time()
 
             sol, obj, routes, costs, orders = generate_CVRPTW_data(VRP_instance,
                                                                    forbidden_edges,
@@ -179,7 +201,7 @@ def main():
                                                                    vehicle_capacity_list, service_times_list)
             time_2 = time.time()
 
-            print("time: " + str(time_2 - time_1))
+            print("time: " + str(time_2 - start_time))
             print("solution: " + str(sol))
             print("objective: " + str(obj))
             print("number of columns: " + str(len(orders)))

@@ -462,10 +462,10 @@ class Subproblem:
 
         return best_label, best_bound, terminate
 
-    def solve_heuristic(self, policy="DP"):
-
-        AR = Arc_Reduction(self.price, self.duals)
-        self.price = AR.BE2()
+    def solve_heuristic(self, arc_red=True, policy="DP"):
+        if arc_red:
+            AR = Arc_Reduction(self.price, self.duals)
+            self.price = AR.BE2()
 
         label, price = None, None
         promising_labels = []
