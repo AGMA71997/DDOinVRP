@@ -56,6 +56,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
     iteration = 0
     consecutive_count = 0
     arc_red = True
+    price_based = True
     obj_val_prev = math.inf
     # Iterate until optimality is reached
     try:
@@ -74,7 +75,10 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
             prices = create_price(time_matrix, duals) * -1
 
             NR = Node_Reduction(duals, coords)
-            red_cor = NR.price_based_elimination(time_matrix)
+            if price_based:
+                red_cor = NR.price_based_elimination(time_matrix)
+            else:
+                red_cor = NR.dual_based_elimination()
             red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices, cus_mapping = reshape_problem(red_cor,
                                                                                                               demands,
                                                                                                               time_windows,
@@ -110,11 +114,16 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
                 print("RC is " + str(reduced_cost))
                 print("Best route: " + str(ordered_route))
                 obj_val = master_problem.model.objval
-                if arc_red:
-                    if obj_val == obj_val_prev:
-                        consecutive_count += 1
-                        if consecutive_count == 10:
+
+                if obj_val == obj_val_prev:
+                    consecutive_count += 1
+                    if consecutive_count == 10:
+                        if arc_red:
                             arc_red = False
+                            consecutive_count = 0
+                        else:
+                            if price_based:
+                                price_based = False
 
                 obj_val_prev = obj_val
                 print("The objective value is: " + str(obj_val))
@@ -136,6 +145,8 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
             else:
                 if arc_red:
                     arc_red = False
+                elif not arc_red and price_based:
+                    price_based = False
                 else:
                     # Optimality has been reached
                     print("Addition Failed")
