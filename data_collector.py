@@ -117,7 +117,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
                 if obj_val == obj_val_prev:
                     consecutive_count += 1
-                    if consecutive_count == 10:
+                    if consecutive_count == 300:
                         if arc_red:
                             arc_red = False
                             consecutive_count = 0
@@ -190,7 +190,8 @@ def main():
     directory = config["Solomon Training Dataset"]
     for instance in os.listdir(directory):
         if instance.startswith(args.file_sequence):
-            file = directory + "/" + instance
+            # file = directory + "/" + instance
+            file = directory + "/" + "RC204.txt"
             print(file)
             VRP_instance = Instance_Generator(file_path=file, config=config)
             forbidden_edges = []

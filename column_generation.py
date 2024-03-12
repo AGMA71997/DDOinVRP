@@ -396,19 +396,20 @@ class Subproblem:
         return best_label, best_price
 
     def DP_heuristic(self, start_point, current_label,
-                     remaining_capacity, current_time, current_price, best_bound):
-        terminate = self.terminate
+                     remaining_capacity, current_time, current_price, best_bound):  # , found):
 
+        terminate = self.terminate
         if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0 or terminate:
-            return [], math.inf, terminate
+            return [], math.inf, terminate  # found
 
         if start_point == 0 and len(current_label) > 1:
-            if current_price < -0.001:
+            if current_price < -0.001:  # and not found:
+                # found = True
                 self.col_count += 1
                 if self.col_count == self.max_columns:
                     self.terminate = True
                 terminate = True
-            return current_label, current_price, terminate
+            return current_label, current_price, terminate  # found
 
         waiting_time = max(self.time_windows[start_point, 0] - current_time, 0)
         current_time += waiting_time
@@ -482,6 +483,7 @@ class Subproblem:
                     current_time = self.time_matrix[0, cus]
                     current_price = self.price[0, cus]
                     best_bound = 0
+                    # found = False
                     thread = Bound_Threader(target=self.DP_heuristic, args=(start_point, current_label,
                                                                             remaining_capacity,
                                                                             current_time, current_price,
