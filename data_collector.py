@@ -190,8 +190,8 @@ def main():
     directory = config["Solomon Training Dataset"]
     for instance in os.listdir(directory):
         if instance.startswith(args.file_sequence):
-            # file = directory + "/" + instance
-            file = directory + "/" + "RC204.txt"
+            file = directory + "/" + instance
+            # file = directory + "/" + "RC204.txt"
             print(file)
             VRP_instance = Instance_Generator(file_path=file, config=config)
             forbidden_edges = []

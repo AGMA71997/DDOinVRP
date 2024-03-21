@@ -396,9 +396,12 @@ class Subproblem:
         return best_label, best_price
 
     def DP_heuristic(self, start_point, current_label,
-                     remaining_capacity, current_time, current_price, best_bound):  # , found):
+                     remaining_capacity, current_time, current_price, best_bound, start_time):  # , found):
 
         terminate = self.terminate
+        if time.time() - start_time > 100:
+            terminate = True
+
         if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0 or terminate:
             return [], math.inf, terminate  # found
 
@@ -452,7 +455,7 @@ class Subproblem:
                         CT = math.inf
 
                 label, lower_bound, terminate = self.DP_heuristic(j, copy_label, RC, CT, CP,
-                                                                  best_bound)
+                                                                  best_bound, start_time)
 
                 if lower_bound < best_bound:
                     best_bound = lower_bound
@@ -484,10 +487,11 @@ class Subproblem:
                     current_price = self.price[0, cus]
                     best_bound = 0
                     # found = False
+                    start_time = time.time()
                     thread = Bound_Threader(target=self.DP_heuristic, args=(start_point, current_label,
                                                                             remaining_capacity,
                                                                             current_time, current_price,
-                                                                            best_bound))
+                                                                            best_bound, start_time))
                     thread.start()
                     threads.append(thread)
 
