@@ -73,8 +73,6 @@ class Instance_Generator(object):
                 if i != j:
                     time_matrix[i, j] = numpy.linalg.norm(customer_locations[i, :] - customer_locations[j, :])
 
-        numpy.fill_diagonal(time_matrix, 100000)
-        time_matrix[0, 0] = 0
         return time_matrix * scale_factor
 
     def create_time_windows(self, minimum_margin=6):

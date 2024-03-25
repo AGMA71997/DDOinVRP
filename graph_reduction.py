@@ -7,6 +7,7 @@ class Arc_Reduction(object):
 
     def __init__(self, prices, duals):
         self.prices = numpy.copy(prices)
+        numpy.fill_diagonal(self.prices, math.inf)
         self.duals = duals.copy()
         self.N = len(self.prices)
 
@@ -88,8 +89,10 @@ class Node_Reduction(object):
         return self.coords
 
     def price_based_elimination(self, time_matrix):
+        time_matrix_2 = numpy.copy(time_matrix)
+        numpy.fill_diagonal(time_matrix_2, math.inf)
         for x in range(1, self.N):
-            smallest_tt = numpy.min(time_matrix[:, x])
+            smallest_tt = numpy.min(time_matrix_2[:, x])
             if self.duals[x] < smallest_tt:
                 self.coords[x, :] = math.inf
         return self.coords

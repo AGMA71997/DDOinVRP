@@ -5,6 +5,7 @@ import torch
 import json
 import math
 import matplotlib.pyplot as pp
+import sys
 
 
 def create_price(time_matrix, duals):
@@ -13,7 +14,7 @@ def create_price(time_matrix, duals):
     assert duals[0] == 0 and len(duals) == len(time_matrix)
     duals = numpy.array(duals)
     prices = (time_matrix - duals) * -1
-    numpy.fill_diagonal(prices, math.inf)
+    numpy.fill_diagonal(prices, 0)
     return prices
 
 
@@ -76,6 +77,7 @@ def data_iterator(config, POMO, num_customers, heuristic, solomon):
     CL, TML, TWL, DL, STL, VCL, DUL = [], [], [], [], [], [], []
     data_count = 0
     for filename in os.listdir(directory):
+        print(filename)
         f = os.path.join(directory, filename)
         pickle_in = open(f, 'rb')
         cl, tml, twl, dl, stl, vcl, dul = pickle.load(pickle_in)
@@ -104,14 +106,15 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
     PL = []
     max_dual = 0
     cl_scaler = 1
+    if solomon:
+        cl_scaler = 100
+
     for x in range(len(CL)):
         depot_CL.append(CL[x][0, :])
         tw_scaler = TWL[x][0, 1]
         depot_TW.append(TWL[x][0, :] / tw_scaler)
         PL.append(create_price(TML[x], DUL[x]))
 
-        if solomon:
-            cl_scaler = 100
         CL[x] = numpy.delete(CL[x], 0, 0) / cl_scaler
         TWL[x] = numpy.delete(TWL[x], 0, 0) / tw_scaler
         TML[x] = TML[x] / tw_scaler
@@ -123,6 +126,7 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
         min_val = numpy.min(PL[x])
         max_val = numpy.max(PL[x])
         PL[x] = PL[x] / max(abs(max_val), abs(min_val))
+
 
     print(max_dual)
     depot_CL = torch.tensor(numpy.stack(depot_CL), dtype=torch.float32)
@@ -245,7 +249,7 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 def main():
     POMO = True
     heuristic = True
-    solomon = False
+    solomon = True
     num_customers = 100
     file = "config.json"
     with open(file, 'r') as f:
