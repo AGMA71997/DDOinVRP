@@ -108,26 +108,26 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
             route = convert_ordered_route(ordered_route, num_customers)
 
             iteration += 1
+            obj_val = master_problem.model.objval
             if iteration % 10 == 0:
                 print("Iteration: " + str(iteration))
                 print("Total solving time for PP is: " + str(time_22 - time_11))
                 print("RC is " + str(reduced_cost))
                 print("Best route: " + str(ordered_route))
-                obj_val = master_problem.model.objval
-
-                if obj_val == obj_val_prev:
-                    consecutive_count += 1
-                    if consecutive_count == 300:
-                        if arc_red:
-                            arc_red = False
-                            consecutive_count = 0
-                        else:
-                            if price_based:
-                                price_based = False
-
-                obj_val_prev = obj_val
                 print("The objective value is: " + str(obj_val))
                 print("The total number of generated columns is: " + str(len(top_labels) + 1))
+
+            if obj_val == obj_val_prev:
+                consecutive_count += 1
+                if consecutive_count == 100:
+                    if arc_red:
+                        arc_red = False
+                        consecutive_count = 0
+                    else:
+                        if price_based:
+                            price_based = False
+
+            obj_val_prev = obj_val
 
             # Check if the candidate column is optimal
             if reduced_cost < 0 and ordered_route not in added_orders:
@@ -145,8 +145,10 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
             else:
                 if arc_red:
                     arc_red = False
+                    print("changed arc red mode.")
                 elif not arc_red and price_based:
                     price_based = False
+                    print("changed node red mode.")
                 else:
                     # Optimality has been reached
                     print("Addition Failed")
@@ -190,8 +192,8 @@ def main():
     directory = config["Solomon Training Dataset"]
     for instance in os.listdir(directory):
         if instance.startswith(args.file_sequence):
-            file = directory + "/" + instance
-            # file = directory + "/" + "RC204.txt"
+            # file = directory + "/" + instance
+            file = directory + "/" + "RC204.txt"
             print(file)
             VRP_instance = Instance_Generator(file_path=file, config=config)
             forbidden_edges = []
@@ -218,6 +220,8 @@ def main():
             print("objective: " + str(obj))
             print("number of columns: " + str(len(orders)))
 
+            break
+
             if not sol:
                 break
 
@@ -232,4 +236,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import cProfile
+
+    cProfile.run('main()')
+    # main()

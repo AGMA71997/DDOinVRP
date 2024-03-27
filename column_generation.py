@@ -399,7 +399,7 @@ class Subproblem:
                      remaining_capacity, current_time, current_price, best_bound, start_time):  # , found):
 
         terminate = self.terminate
-        if time.time() - start_time > 100:
+        if time.time() - start_time > 5:
             terminate = True
 
         if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0 or terminate:

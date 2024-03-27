@@ -49,14 +49,15 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
     added_orders = initial_orders
 
     # Iterate until optimality is reached
-    while True:
+    max_iter = 5000
+    iteration = 0
+    while iteration < max_iter:
         master_problem.solve()
-        print("The objective value of the RMP is: " + str(master_problem.model.objval))
         duals = master_problem.retain_duals()
 
         prices = create_price(time_matrix, duals)
 
-        NR = Node_Reduction(duals, coords)
+        '''NR = Node_Reduction(duals, coords)
         red_cor = NR.dual_based_elimination()
 
         red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices, cus_mapping = reshape_problem(red_cor,
@@ -65,9 +66,9 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
                                                                                                           duals,
                                                                                                           service_times,
                                                                                                           time_matrix,
-                                                                                                          prices)
+                                                                                                          prices)'''
 
-        N = len(red_cor) - 1
+        # N = len(red_cor) - 1
         env_params = {'problem_size': num_customers,
                       'pomo_size': num_customers}
         env = Env(**env_params)
@@ -95,9 +96,16 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
         while best_route[-1] == best_route[-2]:
             best_route.pop()
         # best_route = remap_route(best_route, cus_mapping)
-        print("RC is " + str(best_reward))
-        print(best_route)
-        print("The number of columns generated is: " + str(len(ordered_routes)))
+
+
+        iteration += 1
+        obj_val = master_problem.model.objval
+        if iteration % 10 == 0:
+            print("Iteration: " + str(iteration))
+            print("RC is " + str(best_reward))
+            print("Best route: " + str(best_route))
+            print("The objective value is: " + str(obj_val))
+            print("The number of columns generated is: " + str(len(ordered_routes)))
 
         if len(ordered_routes) > 0:
             for ordered_route in ordered_routes:
@@ -110,7 +118,7 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
                     master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
                     added_orders.append(ordered_route)
         else:
-            print("CG is being used")
+            '''print("CG is being used")
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
                                     red_duals, red_sts, forbidden_edges)
             ordered_route, reduced_cost, top_labels = subproblem.solve()
@@ -122,10 +130,10 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
                 # Add the column to the master problem
                 master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
                 added_orders.append(ordered_route)
-            else:
-                # Optimality has been reached
-                print("No columns with negative reduced cost found.")
-                break
+            else:'''
+            # Optimality has been reached
+            print("No columns with negative reduced cost found.")
+            break
 
     sol, obj = master_problem.extract_solution()
     routes, costs, orders = master_problem.extract_columns()
@@ -198,9 +206,10 @@ def main():
     results = []
     solomon = True
     max_dual = 308.5
-    directory = config["Solomon Test Dataset"]
+    directory = config["Solomon Training Dataset"]
     for instance in os.listdir(directory):
         file = directory + "/" + instance
+        # file = directory + "/" + "C206.txt"
         print(file)
         num_customers = 100
 
@@ -229,8 +238,8 @@ def main():
         }
 
         model_load = {
-            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/saved_esprctw20_model_heuristic_data',
-            'epoch': 30}
+            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/saved_esprctw100_model_heuristic_data_vol3',
+            'epoch': 500}
 
         time_1 = time.time()
         sol, obj, routes, costs, orders = RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix,
@@ -251,7 +260,6 @@ def main():
         print("number of columns: " + str(len(orders)))
 
         results.append(obj)
-        break
 
     mean_obj = statistics.mean(results)
     std_obj = statistics.stdev(results)
