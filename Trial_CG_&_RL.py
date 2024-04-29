@@ -23,7 +23,7 @@ from ESPRCTWModel import ESPRCTWModel as Model
 def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, demands, time_windows,
                                            num_customers, service_times, forbidden_edges, compelled_edges,
                                            initial_routes, initial_costs, initial_orders,
-                                           model_params, model_load, max_dual, solomon):
+                                           model_params, model_load, solomon):
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
 
@@ -48,9 +48,17 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
 
     added_orders = initial_orders
 
+    model = Model(**model_params)
+    device = torch.device('cpu')
+    checkpoint_fullname = '{path}/checkpoint-{epoch}.pt'.format(**model_load)
+    checkpoint = torch.load(checkpoint_fullname, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+
     # Iterate until optimality is reached
     max_iter = 5000
     iteration = 0
+    cum_time = 0
+
     while iteration < max_iter:
         master_problem.solve()
         duals = master_problem.retain_duals()
@@ -72,17 +80,13 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
         env_params = {'problem_size': num_customers,
                       'pomo_size': num_customers}
         env = Env(**env_params)
+        time_1 = time.time()
         env.declare_problem(coords, demands, time_windows,
-                            duals, service_times, time_matrix, prices, vehicle_capacity, max_dual, solomon)
-
-        model = Model(**model_params)
-        device = torch.device('cpu')
-        checkpoint_fullname = '{path}/checkpoint-{epoch}.pt'.format(**model_load)
-        checkpoint = torch.load(checkpoint_fullname, map_location=device)
-        model.load_state_dict(checkpoint['model_state_dict'])
+                            duals, service_times, time_matrix, prices, vehicle_capacity, solomon)
 
         pp_rl_solver = ESPRCTW_RL_solver(env, model, prices)
         ordered_routes, best_route, best_reward = pp_rl_solver.generate_columns()
+        time_2 = time.time()
 
         for ordered_route in ordered_routes:
             while ordered_route[-1] == ordered_route[-2]:
@@ -97,19 +101,21 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
             best_route.pop()
         # best_route = remap_route(best_route, cus_mapping)
 
-
         iteration += 1
         obj_val = master_problem.model.objval
+        cum_time += time_2 - time_1
         if iteration % 10 == 0:
             print("Iteration: " + str(iteration))
             print("RC is " + str(best_reward))
             print("Best route: " + str(best_route))
+            print("The total time spent on PP is :" + str(cum_time))
             print("The objective value is: " + str(obj_val))
-            print("The number of columns generated is: " + str(len(ordered_routes)))
 
+        col_count = 0
         if len(ordered_routes) > 0:
             for ordered_route in ordered_routes:
                 if ordered_route not in added_orders:
+                    col_count += 1
                     # Add the column to the master problem
                     cost = sum(
                         time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
@@ -117,6 +123,9 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
 
                     master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
                     added_orders.append(ordered_route)
+
+            if iteration % 10 == 0:
+                print("The number of columns generated is: " + str(col_count))
         else:
             '''print("CG is being used")
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
@@ -178,6 +187,8 @@ class ESPRCTW_RL_solver(object):
             # shape: (max episode length, batch, pomo)
             state, reward, done = self.env.step(selected)
             # shape: (batch, pomo)
+
+        # print(-1*reward)
         real_rewards = self.return_real_reward(decisions)
 
         best_rewards_indexes = real_rewards.argmin(dim=1)
@@ -204,16 +215,17 @@ def main():
         config = json.load(f)
 
     results = []
-    solomon = True
-    max_dual = 308.5
-    directory = config["Solomon Training Dataset"]
-    for instance in os.listdir(directory):
-        file = directory + "/" + instance
+    solomon = False
+    # max_dual = 308.5
+    # directory = config["Solomon Test Dataset"]
+    # for instance in os.listdir(directory):
+    for experiment in range(50):
+        # file = directory + "/" + instance
         # file = directory + "/" + "C206.txt"
-        print(file)
+        # print(file)
         num_customers = 100
 
-        VRP_instance = Instance_Generator(file_path=file, config=config)
+        VRP_instance = Instance_Generator(N=num_customers)
         time_matrix = VRP_instance.time_matrix
         time_windows = VRP_instance.time_windows
         demands = VRP_instance.demands
@@ -238,8 +250,8 @@ def main():
         }
 
         model_load = {
-            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/saved_esprctw100_model_heuristic_data_vol3',
-            'epoch': 500}
+            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/model100_scaler_max_t_data',
+            'epoch': 160}
 
         time_1 = time.time()
         sol, obj, routes, costs, orders = RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix,
@@ -250,7 +262,7 @@ def main():
                                                                                  compelled_edges,
                                                                                  initial_routes, initial_costs,
                                                                                  initial_orders, model_params,
-                                                                                 model_load, max_dual,
+                                                                                 model_load,
                                                                                  solomon)
         time_2 = time.time()
 

@@ -18,6 +18,16 @@ def create_price(time_matrix, duals):
     return prices
 
 
+def sort_indices(duals):
+    # Enumerate the list to get (index, value) pairs
+    indexed_lst = list(enumerate(duals))
+    # Sort the list by the values (using the second element of the tuples)
+    sorted_indexed_lst = sorted(indexed_lst, key=lambda x: x[1], reverse=True)
+    # Extract the sorted indices
+    sorted_indices = [index for index, value in sorted_indexed_lst]
+    return sorted_indices
+
+
 def reshape_problem(coords, demands, time_windows, duals, service_times, time_matrix, prices):
     coords = numpy.copy(coords)
     demands = numpy.copy(demands)
@@ -112,14 +122,14 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
     for x in range(len(CL)):
         depot_CL.append(CL[x][0, :])
         tw_scaler = TWL[x][0, 1]
-        depot_TW.append(TWL[x][0, :])  # / tw_scaler)
+        depot_TW.append(TWL[x][0, :] / tw_scaler)
         PL.append(create_price(TML[x], DUL[x]))
 
-        CL[x] = numpy.delete(CL[x], 0, 0)  # / cl_scaler
-        TWL[x] = numpy.delete(TWL[x], 0, 0)  # / tw_scaler
-        TML[x] = TML[x]  # / tw_scaler
-        DL[x] = numpy.delete(DL[x], 0, 0)  # / VCL[x]
-        STL[x] = numpy.delete(STL[x], 0, 0)  # / tw_scaler
+        CL[x] = numpy.delete(CL[x], 0, 0) / cl_scaler
+        TWL[x] = numpy.delete(TWL[x], 0, 0) / tw_scaler
+        TML[x] = TML[x] / tw_scaler
+        DL[x] = numpy.delete(DL[x], 0, 0) / VCL[x]
+        STL[x] = numpy.delete(STL[x], 0, 0) / tw_scaler
         if max(DUL[x]) > max_dual:
             max_dual = max(DUL[x])
         DUL[x] = numpy.delete(DUL[x], 0, 0)
@@ -127,7 +137,7 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
         max_val = numpy.max(PL[x])
         PL[x] = PL[x] / max(abs(max_val), abs(min_val))
 
-    # print(max_dual)
+    print(max_dual)
     depot_CL = torch.tensor(numpy.stack(depot_CL), dtype=torch.float32)
     depot_TW = torch.tensor(numpy.stack(depot_TW), dtype=torch.float32)
     CL = torch.tensor(numpy.stack(CL), dtype=torch.float32)
@@ -135,7 +145,7 @@ def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config
     TML = torch.tensor(numpy.stack(TML), dtype=torch.float32)
     DL = torch.tensor(numpy.stack(DL), dtype=torch.float32)
     STL = torch.tensor(numpy.stack(STL), dtype=torch.float32)
-    DUL = torch.tensor(numpy.stack(DUL), dtype=torch.float32)
+    DUL = torch.tensor(numpy.stack(DUL) / max_dual, dtype=torch.float32)
     PL = torch.tensor(numpy.stack(PL), dtype=torch.float32)
 
     depot_CL = depot_CL[:, None, :].expand(-1, 1, -1)

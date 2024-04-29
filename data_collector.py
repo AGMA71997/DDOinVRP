@@ -1,4 +1,5 @@
 import math
+import statistics
 
 from utils import *
 from column_generation import MasterProblem, Subproblem
@@ -63,6 +64,14 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
         while iteration < max_iter:
             master_problem.solve()
             duals = master_problem.retain_duals()
+            non_zeros = [x for x in duals if x != 0]
+            print(min(non_zeros))
+            '''print(len(non_zeros))
+            print(statistics.mean(non_zeros))
+            print(max(non_zeros))
+            print(min(non_zeros))
+            print(non_zeros)'''
+            print("###############")
 
             coords_list.append(coords)
             time_matrix_list.append(time_matrix)
@@ -220,8 +229,6 @@ def main():
             print("objective: " + str(obj))
             print("number of columns: " + str(len(orders)))
 
-            break
-
             if not sol:
                 break
 
@@ -238,5 +245,5 @@ def main():
 if __name__ == "__main__":
     import cProfile
 
-    cProfile.run('main()')
-    # main()
+    # cProfile.run('main()')
+    main()
