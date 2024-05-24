@@ -9,6 +9,8 @@ import random
 import numpy as np
 import sys
 import statistics
+import argparse
+
 
 import matplotlib.pyplot as pp
 
@@ -58,7 +60,8 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
     max_iter = 5000
     iteration = 0
     cum_time = 0
-
+    results_dict = {}
+    start_time = time.time()
     while iteration < max_iter:
         master_problem.solve()
         duals = master_problem.retain_duals()
@@ -110,22 +113,18 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
             print("Best route: " + str(best_route))
             print("The total time spent on PP is :" + str(cum_time))
             print("The objective value is: " + str(obj_val))
+            print("The number of columns generated is: " + str(len(ordered_routes)))
+            results_dict[iteration] = (obj_val, time.time() - start_time)
 
-        col_count = 0
         if len(ordered_routes) > 0:
             for ordered_route in ordered_routes:
-                if ordered_route not in added_orders:
-                    col_count += 1
-                    # Add the column to the master problem
-                    cost = sum(
-                        time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
-                    route = convert_ordered_route(ordered_route, num_customers)
+                # Add the column to the master problem
+                cost = sum(
+                    time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
+                route = convert_ordered_route(ordered_route, num_customers)
 
-                    master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
-                    added_orders.append(ordered_route)
-
-            if iteration % 10 == 0:
-                print("The number of columns generated is: " + str(col_count))
+                master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
+                added_orders.append(ordered_route)
         else:
             '''print("CG is being used")
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
@@ -145,8 +144,9 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
             break
 
     sol, obj = master_problem.extract_solution()
+    results_dict["Final"] = (obj, time.time() - start_time)
     routes, costs, orders = master_problem.extract_columns()
-    return sol, obj, routes, costs, orders
+    return sol, obj, routes, costs, orders, results_dict
 
 
 class ESPRCTW_RL_solver(object):
@@ -209,6 +209,10 @@ class ESPRCTW_RL_solver(object):
 def main():
     random.seed(10)
     np.random.seed(10)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--num_customers', type=int, default=100)
+    args = parser.parse_args()
+    num_customers = args.num_customers
 
     file = "config.json"
     with open(file, 'r') as f:
@@ -216,14 +220,13 @@ def main():
 
     results = []
     solomon = False
-    # max_dual = 308.5
+    performance_dicts = []
     # directory = config["Solomon Test Dataset"]
     # for instance in os.listdir(directory):
     for experiment in range(50):
         # file = directory + "/" + instance
         # file = directory + "/" + "C206.txt"
         # print(file)
-        num_customers = 100
 
         VRP_instance = Instance_Generator(N=num_customers)
         time_matrix = VRP_instance.time_matrix
@@ -250,36 +253,42 @@ def main():
         }
 
         model_load = {
-            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/model100_scaler_max_t_data',
-            'epoch': 160}
+            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/model20_max_t_data',
+            'epoch': 200}
 
-        time_1 = time.time()
-        sol, obj, routes, costs, orders = RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix,
-                                                                                 demands,
-                                                                                 time_windows,
-                                                                                 num_customers, service_times,
-                                                                                 forbidden_edges,
-                                                                                 compelled_edges,
-                                                                                 initial_routes, initial_costs,
-                                                                                 initial_orders, model_params,
-                                                                                 model_load,
-                                                                                 solomon)
-        time_2 = time.time()
+        sol, obj, routes, costs, orders, results_dict = RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity,
+                                                                                               time_matrix,
+                                                                                               demands,
+                                                                                               time_windows,
+                                                                                               num_customers,
+                                                                                               service_times,
+                                                                                               forbidden_edges,
+                                                                                               compelled_edges,
+                                                                                               initial_routes,
+                                                                                               initial_costs,
+                                                                                               initial_orders,
+                                                                                               model_params,
+                                                                                               model_load,
+                                                                                               solomon)
 
-        print("time: " + str(time_2 - time_1))
         print("solution: " + str(sol))
         print("objective: " + str(obj))
         print("number of columns: " + str(len(orders)))
 
         results.append(obj)
+        performance_dicts.append(results_dict)
 
     mean_obj = statistics.mean(results)
     std_obj = statistics.stdev(results)
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pp.hist(results)
-    pp.show()
+    pickle_out = open('Results N='+str(num_customers), 'wb')
+    pickle.dump(performance_dicts, pickle_out)
+    pickle_out.close()
+
+    # pp.hist(results)
+    # pp.show()
 
 
 if __name__ == "__main__":
