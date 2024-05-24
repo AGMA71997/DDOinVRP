@@ -283,7 +283,7 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pickle_out = open('Results N='+str(num_customers), 'wb')
+    pickle_out = open('RL Results N='+str(num_customers), 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 

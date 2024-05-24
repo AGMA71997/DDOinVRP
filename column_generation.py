@@ -691,7 +691,7 @@ def main():
     #pp.hist(results)
     #pp.show()
 
-    pickle_out = open('Results N=' + str(num_customers), 'wb')
+    pickle_out = open('DP Results N=' + str(num_customers), 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 
