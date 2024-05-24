@@ -42,8 +42,8 @@ def solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, d
 
     added_orders = initial_orders
     reoptimize = True
-    max_iter = 500
-    max_time = 10 * 60
+    max_iter = 5000
+    max_time = 60 * 60
     start_time = time.time()
     results_dict = {}
     iteration = 0
