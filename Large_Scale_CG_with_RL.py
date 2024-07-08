@@ -1,5 +1,5 @@
 from instance_generator import Instance_Generator
-from column_generation import MasterProblem, Subproblem
+from column_generation import MasterProblem
 import time
 from utils import *
 
@@ -10,22 +10,25 @@ import numpy as np
 import sys
 import statistics
 import argparse
-
-
-import matplotlib.pyplot as pp
+from CG_with_RL import ESPRCTW_RL_solver
 
 from graph_reduction import Node_Reduction
+
+import matplotlib.pyplot as pp
 
 sys.path.insert(0, r'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO')
 sys.path.insert(0, r'C:/Users/abdug/Python/POMO-implementation/ESPRCTW')
 from ESPRCTWEnv import ESPRCTWEnv as Env
 from ESPRCTWModel import ESPRCTWModel as Model
 
+sys.path.insert(0, r'C:/Users/abdug/Python/UL4TSP/PP')
+from models import GNN
+
 
 def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, demands, time_windows,
                                            num_customers, service_times, forbidden_edges, compelled_edges,
-                                           initial_routes, initial_costs, initial_orders,
-                                           model_params, model_load, solomon):
+                                           initial_routes, initial_costs, initial_orders, model_path, reduction_size,
+                                           red_costs):
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
 
@@ -50,11 +53,31 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
 
     added_orders = initial_orders
 
-    model = Model(**model_params)
+    POMO_params = {
+        'embedding_dim': 128,
+        'sqrt_embedding_dim': 128 ** (1 / 2),
+        'encoder_layer_num': 6,
+        'qkv_dim': 16,
+        'head_num': 8,
+        'logit_clipping': 10,
+        'ff_hidden_dim': 512,
+        'eval_type': 'argmax',
+    }
+
+    POMO_load = {
+        'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/model100_scaler_max_t_data',
+        'epoch': 160}
+
+    POMO = Model(**POMO_params)
     device = torch.device('cpu')
-    checkpoint_fullname = '{path}/checkpoint-{epoch}.pt'.format(**model_load)
+    checkpoint_fullname = '{path}/checkpoint-{epoch}.pt'.format(**POMO_load)
     checkpoint = torch.load(checkpoint_fullname, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    POMO.load_state_dict(checkpoint['model_state_dict'])
+
+    GR = GNN(input_dim=5, hidden_dim=64, output_dim=1, n_layers=2)
+    checkpoint_main = torch.load(model_path, map_location=device)
+    GR.load_state_dict(checkpoint_main)
+    temperature = 3.5
 
     # Iterate until optimality is reached
     max_iter = 5000
@@ -62,47 +85,61 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
     cum_time = 0
     results_dict = {}
     start_time = time.time()
+    dual_plot = []
     while iteration < max_iter:
         master_problem.solve()
         duals = master_problem.retain_duals()
+        dual_plot += [x for x in duals if x > 0]
 
         prices = create_price(time_matrix, duals)
 
-        '''NR = Node_Reduction(duals, coords)
-        red_cor = NR.dual_based_elimination()
-
+        time_1 = time.time()
+        f0 = torch.tensor(np.expand_dims(coords[1:, :], 0),dtype=torch.float32)
+        f1 = torch.tensor(np.expand_dims(time_windows[1:, :], 0),dtype=torch.float32)
+        f2 = torch.tensor(np.expand_dims(duals[1:], 0),dtype=torch.float32)
+        dims = f2.shape
+        f2 = torch.reshape(f2, (dims[0], dims[1], 1))
+        X = torch.cat([f0, f1, f2], dim=2)
+        distance_m = torch.tensor(np.expand_dims(time_matrix[1:, 1:], 0),dtype=torch.float32)
+        adj = torch.exp(-1. * distance_m / temperature)
+        output = GR(X, adj)
+        sorted_indices = output.argsort(dim=1, descending=True)[0, :reduction_size]
+        NR = Node_Reduction(coords)
+        red_cor = NR.reduce_by_indices(sorted_indices)
         red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices, cus_mapping = reshape_problem(red_cor,
                                                                                                           demands,
                                                                                                           time_windows,
                                                                                                           duals,
                                                                                                           service_times,
                                                                                                           time_matrix,
-                                                                                                          prices)'''
+                                                                                                          prices)
 
-        # N = len(red_cor) - 1
-        env_params = {'problem_size': num_customers,
-                      'pomo_size': num_customers}
+        N = len(red_cor) - 1
+        env_params = {'problem_size': N,
+                      'pomo_size': N}
         env = Env(**env_params)
-        time_1 = time.time()
-        env.declare_problem(coords, demands, time_windows,
-                            duals, service_times, time_matrix, prices, vehicle_capacity, solomon)
 
-        pp_rl_solver = ESPRCTW_RL_solver(env, model, prices)
+        env.declare_problem(red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices, vehicle_capacity, 1)
+
+        pp_rl_solver = ESPRCTW_RL_solver(env, POMO, red_prices)
         ordered_routes, best_route, best_reward = pp_rl_solver.generate_columns()
+
+        # red_costs.append(best_reward)
+        # break
+
         time_2 = time.time()
 
         for ordered_route in ordered_routes:
             while ordered_route[-1] == ordered_route[-2]:
                 ordered_route.pop()
-            # ordered_route = remap_route(ordered_route, cus_mapping)
-            if not check_route_feasibility(ordered_route, time_matrix, time_windows, service_times, demands,
+            '''if not check_route_feasibility(ordered_route, time_matrix, time_windows, service_times, demands,
                                            vehicle_capacity):
                 print("Infeasible Route Detected")
-                sys.exit(0)
+                sys.exit(0)'''
 
         while best_route[-1] == best_route[-2]:
             best_route.pop()
-        # best_route = remap_route(best_route, cus_mapping)
+        best_route = remap_route(best_route, cus_mapping)
 
         iteration += 1
         obj_val = master_problem.model.objval
@@ -119,6 +156,7 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
         if len(ordered_routes) > 0:
             for ordered_route in ordered_routes:
                 # Add the column to the master problem
+                ordered_route = remap_route(ordered_route, cus_mapping)
                 cost = sum(
                     time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
                 route = convert_ordered_route(ordered_route, num_customers)
@@ -126,19 +164,6 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
                 master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
                 added_orders.append(ordered_route)
         else:
-            '''print("CG is being used")
-            subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
-                                    red_duals, red_sts, forbidden_edges)
-            ordered_route, reduced_cost, top_labels = subproblem.solve()
-            print("reduced cost of generated column is: " + str(reduced_cost))
-            ordered_route = remap_route(ordered_route, cus_mapping)
-            cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
-            route = convert_ordered_route(ordered_route, num_customers)
-            if reduced_cost < 0 and ordered_route not in added_orders:
-                # Add the column to the master problem
-                master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
-                added_orders.append(ordered_route)
-            else:'''
             # Optimality has been reached
             print("No columns with negative reduced cost found.")
             break
@@ -146,88 +171,35 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
     sol, obj = master_problem.extract_solution()
     results_dict["Final"] = (obj, time.time() - start_time)
     routes, costs, orders = master_problem.extract_columns()
+    # pp.hist(dual_plot, bins=50)
+    print("Average duals: " + str(statistics.mean(dual_plot)))
+    # print("Std. Dev. of duals: "+str(statistics.stdev(dual_plot)))
+    # pp.show()
     return sol, obj, routes, costs, orders, results_dict
-
-
-class ESPRCTW_RL_solver(object):
-    def __init__(self, env, model, prices):
-        self.env = env
-        self.model = model
-        self.prices = prices
-
-    def train(self, steps):
-        pass
-
-    def evaluate(self):
-        pass
-
-    def return_real_reward(self, decisions):
-        real_rewards = torch.zeros((self.env.batch_size, self.env.pomo_size))
-        for x in range(self.env.batch_size):
-            for y in range(self.env.pomo_size):
-                real_rewards[x, y] = sum(
-                    [self.prices[int(decisions[r, x, y]), int(decisions[r + 1, x, y])] for r in
-                     range(len(decisions) - 1)])
-
-        return real_rewards * -1
-
-    def generate_columns(self):
-        self.model.eval()
-        with torch.no_grad():
-            reset_state, _, _ = self.env.reset()
-            self.model.pre_forward(reset_state)
-
-        # POMO Rollout
-        ###############################################
-        state, reward, done = self.env.pre_step()
-        decisions = torch.empty((0, self.env.batch_size, self.env.pomo_size), dtype=torch.float32)
-        while not done:
-            selected, _ = self.model(state)
-            decisions = torch.cat((decisions, selected[None, :, :]), dim=0)
-            # shape: (max episode length, batch, pomo)
-            state, reward, done = self.env.step(selected)
-            # shape: (batch, pomo)
-
-        # print(-1*reward)
-        real_rewards = self.return_real_reward(decisions)
-
-        best_rewards_indexes = real_rewards.argmin(dim=1)
-
-        best_column = torch.tensor(decisions[:, 0, best_rewards_indexes[0]], dtype=torch.int).tolist()
-
-        negative_reduced_costs = real_rewards < -0.0000001
-        indices = negative_reduced_costs.nonzero()
-        promising_columns = []
-        for index in indices:
-            column = torch.tensor(decisions[:, index[0], index[1]], dtype=torch.int)
-            column = column.tolist()
-            promising_columns.append(column)
-
-        return promising_columns, best_column, float(real_rewards[0, best_rewards_indexes[0]])
 
 
 def main():
     random.seed(10)
     np.random.seed(10)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_customers', type=int, default=100)
+    parser.add_argument('--num_customers', type=int, default=200)
+    parser.add_argument('--reduction_size', type=int, default=100)
+    example_path = 'C:/Users/abdug/Python/UL4TSP/PP/Saved_Models/PP_200/scatgnn_layer_2_hid_64_model_290_temp_3.500.pth'
+    parser.add_argument('--model_path', type=str, default=example_path)
     args = parser.parse_args()
     num_customers = args.num_customers
+    reduction_size = args.reduction_size
+
+    model_path = args.model_path
 
     file = "config.json"
     with open(file, 'r') as f:
         config = json.load(f)
 
     results = []
-    solomon = False
     performance_dicts = []
-    # directory = config["Solomon Test Dataset"]
-    # for instance in os.listdir(directory):
+    red_costs = []
     for experiment in range(50):
-        # file = directory + "/" + instance
-        # file = directory + "/" + "C206.txt"
-        # print(file)
-
         VRP_instance = Instance_Generator(N=num_customers)
         time_matrix = VRP_instance.time_matrix
         time_windows = VRP_instance.time_windows
@@ -241,21 +213,6 @@ def main():
         initial_costs = []
         initial_orders = []
 
-        model_params = {
-            'embedding_dim': 128,
-            'sqrt_embedding_dim': 128 ** (1 / 2),
-            'encoder_layer_num': 6,
-            'qkv_dim': 16,
-            'head_num': 8,
-            'logit_clipping': 10,
-            'ff_hidden_dim': 512,
-            'eval_type': 'argmax',
-        }
-
-        model_load = {
-            'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/model20_max_t_data',
-            'epoch': 200}
-
         sol, obj, routes, costs, orders, results_dict = RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity,
                                                                                                time_matrix,
                                                                                                demands,
@@ -267,9 +224,9 @@ def main():
                                                                                                initial_routes,
                                                                                                initial_costs,
                                                                                                initial_orders,
-                                                                                               model_params,
-                                                                                               model_load,
-                                                                                               solomon)
+                                                                                               model_path,
+                                                                                               reduction_size,
+                                                                                               red_costs)
 
         print("solution: " + str(sol))
         print("objective: " + str(obj))
@@ -283,11 +240,12 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pickle_out = open('RL Results N='+str(num_customers), 'wb')
+    pickle_out = open('RL Results N=' + str(num_customers), 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 
-    # pp.hist(results)
+    # pp.hist(red_costs)
+    # pp.title("Reduced Cost Histogram for POMO-CG")
     # pp.show()
 
 

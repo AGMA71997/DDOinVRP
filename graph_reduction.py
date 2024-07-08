@@ -77,10 +77,11 @@ class Arc_Reduction(object):
 
 
 class Node_Reduction(object):
-    def __init__(self, duals, coords):
-        self.duals = duals.copy()
+    def __init__(self, coords, duals=None):
+        if duals is not None:
+            self.duals = duals.copy()
         self.coords = numpy.copy(coords)
-        self.N = len(self.duals)
+        self.N = len(self.coords)
 
     def dual_based_elimination(self):
         for x in range(1, self.N):
@@ -96,6 +97,15 @@ class Node_Reduction(object):
             if self.duals[x] < smallest_tt:
                 self.coords[x, :] = math.inf
         return self.coords
+
+    def reduce_by_indices(self,indices):
+        for x in range(1, self.N):
+            if x - 1 not in indices:
+                self.coords[x, :] = math.inf
+
+        return self.coords
+
+
 
 
 def main():

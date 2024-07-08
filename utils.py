@@ -2,10 +2,113 @@ import pickle
 import os
 import numpy
 import torch
-import json
 import math
 import matplotlib.pyplot as pp
+import scipy.stats as st
 import sys
+import statistics
+
+
+def result_analyzer(method, num_customers, scaler=None):
+    if not os.getcwd().endswith('results'):
+        os.chdir('results')
+
+    if method == "DP":
+        file_name = 'DP Results N=' + str(num_customers)
+    elif method == "RL":
+        assert scaler is not None
+        if scaler == 0:
+            file_name = 'RL Results N=' + str(num_customers) + ' no scale'
+        else:
+            file_name = 'RL Results N=' + str(num_customers) + ' scaler' + str(scaler)
+    else:
+        print("No such method")
+        sys.exit(0)
+
+    pickle_in = open(file_name, 'rb')
+    performance_dicts = pickle.load(pickle_in)
+
+    pickle_in = open('DP Results N=' + str(num_customers), 'rb')
+    baseline = pickle.load(pickle_in)
+
+    time_obj_map = {}
+    if method == "RL":
+        Time_limit = 200
+        for x in range(0, Time_limit, 2):
+            time_obj_map[x] = []
+    else:
+        Time_limit = 3600
+        for x in range(0, Time_limit, 2):
+            time_obj_map[x] = []
+
+    DP_catch_up = []
+    Gaps = []
+    for index, instance_dict in enumerate(performance_dicts):
+        baseline_dict = baseline[index]
+        Gaps.append((instance_dict["Final"][0] - baseline_dict["Final"][0]) * 100 / baseline_dict["Final"][0])
+        for key in instance_dict:
+            time = instance_dict[key][1]
+            obj_gap = (instance_dict[key][0] - baseline_dict["Final"][0]) * 100 / baseline_dict["Final"][0]
+
+            for key2 in time_obj_map:
+                if time < key2:
+                    time_obj_map[key2].append(obj_gap)
+                    break
+
+        RL_final = instance_dict['Final'][0]
+        stoppage = None
+        for key in baseline_dict:
+            if key == "Final":
+                continue
+
+            if baseline_dict[key][0] <= RL_final:
+                stoppage = baseline_dict[key][1]
+                break
+
+        if stoppage is None:
+            factor = (baseline_dict['Final'][0] - instance_dict['Final'][0]) / instance_dict['Final'][0]
+            stoppage = baseline_dict['Final'][1] * (1 + factor)
+        DP_catch_up.append(stoppage / instance_dict['Final'][1])
+
+    CI = {}
+    x = []
+    y = []
+    for key in time_obj_map:
+        if not time_obj_map[key]:
+            continue
+
+        CI[key] = st.t.interval(0.95, len(time_obj_map[key]) - 1, loc=numpy.mean(time_obj_map[key]),
+                                scale=st.sem(time_obj_map[key]))
+
+        x.append(key)
+        y.append(statistics.mean(time_obj_map[key]))
+
+        if math.isnan(CI[key][0]):
+            del CI[key]
+            index = x.index(key)
+            del x[index]
+            del y[index]
+
+    try:
+        del CI['Final']
+    except:
+        print("already deleted")
+
+    print("Average final objective gap is: " + str(statistics.mean(Gaps)))
+    print("Objective gaps along iterations:" + str(y))
+    print("Run time along iterations: " + str(x))
+    print("With confidence interval: " + str(CI))
+    print("Scale factor of reduction in run_time:" + str(statistics.mean(DP_catch_up)))
+
+    CI_up = [CI[key][1] for key in CI]
+    CI_low = [CI[key][0] for key in CI]
+
+    pp.plot(x, y)
+    pp.fill_between(x, CI_low, CI_up, color='b', alpha=.1)
+    pp.xlabel("Time (s)")
+    pp.ylabel("Objective Gap (%)")
+    pp.title("Convergence plot")
+    pp.show()
 
 
 def create_price(time_matrix, duals):
@@ -69,7 +172,7 @@ def reshape_problem(coords, demands, time_windows, duals, service_times, time_ma
     idx = mask.any(axis=0)
     prices = prices[:, ~idx]
 
-    # print("The problem has been reduced to size: " + str(len(coords) - 1))
+    #print("The problem has been reduced to size: " + str(len(coords) - 1))
     return coords, demands, time_windows, duals, service_times, time_matrix, prices, cus_mapping
 
 
@@ -256,15 +359,11 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 
 
 def main():
-    POMO = True
-    heuristic = True
-    solomon = True
-    num_customers = 100
-    file = "config.json"
-    with open(file, 'r') as f:
-        config = json.load(f)
+    method = 'DP'
+    num_customers = 50
+    scaler = '2+(1-100)'
 
-    data_iterator(config, POMO, num_customers, heuristic, solomon)
+    result_analyzer(method, num_customers, scaler)
 
 
 if __name__ == "__main__":
