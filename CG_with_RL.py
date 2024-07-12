@@ -19,10 +19,16 @@ from ESPRCTWEnv import ESPRCTWEnv as Env
 from ESPRCTWModel import ESPRCTWModel as Model
 
 
-def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, demands, time_windows,
-                                           num_customers, service_times, forbidden_edges, compelled_edges,
+def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled_edges,
                                            initial_routes, initial_costs, initial_orders,
                                            model_params, model_load, red_costs):
+    coords = VRP_instance.coords
+    time_matrix = VRP_instance.time_matrix
+    time_windows = VRP_instance.time_windows
+    demands = VRP_instance.demands
+    vehicle_capacity = VRP_instance.vehicle_capacity
+    service_times = VRP_instance.service_times
+    num_customers = VRP_instance.N
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
 
@@ -114,7 +120,7 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
 
                 master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
                 added_orders.append(ordered_route)
-        elif not changed:
+            '''elif not changed:
             changed = True
             model_load = {
                 'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/model50_scaler_max_t_data',
@@ -124,7 +130,7 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
             model.load_state_dict(checkpoint['model_state_dict'])
             ##############################
 
-            '''print("CG is being used")
+            print("CG is being used")
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
                                     red_duals, red_sts, forbidden_edges)
             ordered_route, reduced_cost, top_labels = subproblem.solve()
@@ -135,8 +141,7 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
             if reduced_cost < 0 and ordered_route not in added_orders:
                 # Add the column to the master problem
                 master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
-                added_orders.append(ordered_route)
-            else:'''
+                added_orders.append(ordered_route)'''
         else:
             # Optimality has been reached
             print("No columns with negative reduced cost found.")
@@ -214,7 +219,7 @@ def main():
     np.random.seed(10)
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_customers', type=int, default=50)
-    example_path = 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/model50_scaler2_max_t_data'
+    example_path = 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/model50_scaler2_Nby2'
     parser.add_argument('--model_path', type=str, default=example_path)
     parser.add_argument('--epoch', type=int, default=200)
     args = parser.parse_args()
@@ -238,12 +243,6 @@ def main():
         # print(file)
 
         VRP_instance = Instance_Generator(N=num_customers)
-        time_matrix = VRP_instance.time_matrix
-        time_windows = VRP_instance.time_windows
-        demands = VRP_instance.demands
-        coords = VRP_instance.coords
-        vehicle_capacity = VRP_instance.vehicle_capacity
-        service_times = VRP_instance.service_times
         forbidden_edges = []
         compelled_edges = []
         initial_routes = []
@@ -265,12 +264,7 @@ def main():
             'path': path,
             'epoch': epoch}
 
-        sol, obj, routes, costs, orders, results_dict = RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity,
-                                                                                               time_matrix,
-                                                                                               demands,
-                                                                                               time_windows,
-                                                                                               num_customers,
-                                                                                               service_times,
+        sol, obj, routes, costs, orders, results_dict = RL_solve_relaxed_vrp_with_time_windows(VRP_instance,
                                                                                                forbidden_edges,
                                                                                                compelled_edges,
                                                                                                initial_routes,

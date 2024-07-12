@@ -1,15 +1,13 @@
-import math
-import sys
-
 import numpy as np
 import gurobipy as gb
 from instance_generator import Instance_Generator
 import random
 import time
 from threading import Thread
-import statistics
+
 from utils import *
 import argparse
+import json
 
 import matplotlib.pyplot as pp
 from graph_reduction import Node_Reduction, Arc_Reduction
@@ -42,8 +40,8 @@ def solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, d
 
     added_orders = initial_orders
     reoptimize = True
-    max_iter = 5000
-    max_time = 60 * 60
+    max_iter = 1000
+    max_time = 5 * 60
     start_time = time.time()
     results_dict = {}
     iteration = 0
@@ -62,7 +60,7 @@ def solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, d
 
         prices = create_price(time_matrix, duals) * -1
 
-        NR = Node_Reduction(duals, coords)
+        NR = Node_Reduction(coords, duals)
         red_cor = NR.dual_based_elimination()
         red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices, cus_mapping = reshape_problem(red_cor,
                                                                                                           demands,
@@ -73,8 +71,6 @@ def solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, d
                                                                                                           prices)
 
         N = len(red_cor) - 1
-        # print(N)
-        # print("----")
         time_11 = time.time()
         subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
                                 red_duals, red_sts, forbidden_edges)
@@ -94,7 +90,7 @@ def solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, d
         iteration += 1
         obj_val = master_problem.model.objval
         cum_time += time_22 - time_11
-        if iteration % 10 == 0:
+        if iteration % 1 == 0:
             print("Iteration: " + str(iteration))
             # print("Solving time for PP is: " + str(time_22 - time_11))
             print("RC is " + str(reduced_cost))
@@ -127,10 +123,10 @@ def solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, d
     sol, obj = master_problem.extract_solution()
     results_dict["Final"] = (obj, time.time() - start_time)
     routes, costs, orders = master_problem.extract_columns()
-    for order in orders:
+    '''for order in orders:
         if not check_route_feasibility(order, time_matrix, time_windows, service_times, demands, vehicle_capacity):
             print("Infeasible route detected")
-            sys.exit(0)
+            sys.exit(0)'''
     master_problem.__delete__()
 
     # pp.hist(dual_plot, bins=50)
@@ -271,6 +267,8 @@ class Subproblem:
         for inc in range(self.no_of_increments, stopping_inc, -1):
             threads = []
             for cus in self.price_arrangement[0]:
+                if cus == 0:
+                    continue
                 start_point = cus
                 current_label = [cus]
                 remaining_capacity = self.vehicle_capacity - self.demands[cus]
@@ -278,29 +276,23 @@ class Subproblem:
                 current_price = 0
                 best_bound = min(numpy.min(self.bounds[cus - 1, :]), 0)
                 solve = False
-                start_time = time.time()
                 thread = Bound_Threader(target=self.bound_calculator, args=(start_point, current_label,
                                                                             remaining_capacity,
                                                                             current_time, current_price,
-                                                                            best_bound, solve, start_time))
+                                                                            best_bound, solve))
                 thread.start()
                 threads.append(thread)
 
             for index, thread in enumerate(threads):
-                label, lower_bound, terminate = thread.join()
+                label, lower_bound = thread.join()
                 self.bounds[index, inc - 1] = lower_bound
-                # print(inc, index+1)
                 self.supreme_labels[index + 1, inc] = label
 
-    def bound_calculator(self, start_point, current_label,
-                         remaining_capacity, current_time, current_price, best_bound, solve, start_time):
+    def bound_calculator(self, start_point, current_label, remaining_capacity, current_time,
+                         current_price, best_bound, solve):
 
-        terminate = self.terminate
-        if time.time() - start_time > 100:
-            terminate = True
-
-        if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0 or terminate:
-            return [], math.inf, terminate
+        if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0:
+            return [], math.inf
 
         if start_point == 0 and len(current_label) > 1:
             if current_price < -0.001:
@@ -308,17 +300,9 @@ class Subproblem:
                     if current_price < self.primal_bound:
                         self.primal_bound = current_price
                         self.primal_label = current_label
-
-                    #terminate = True
-                    self.col_count += 1
-                    if self.col_count == math.inf: #self.max_columns:
-                        self.terminate = True
-                else:
-                    pass
-                    #terminate = True
             else:
                 current_price = 0
-            return current_label, current_price, terminate
+            return current_label, current_price
 
         waiting_time = max(self.time_windows[start_point, 0] - current_time, 0)
         current_time += waiting_time
@@ -330,10 +314,10 @@ class Subproblem:
                 bound_estimate = current_price + self.bounds[start_point - 1, inc - 1]
                 if solve:
                     if bound_estimate > self.primal_bound:
-                        return [], math.inf, terminate
+                        return [], math.inf
                 else:
                     if bound_estimate > best_bound:
-                        return [], math.inf, terminate
+                        return [], math.inf
 
         best_label = []
         best_price_indices = self.price_arrangement[start_point]
@@ -371,17 +355,14 @@ class Subproblem:
                     if roll_back_price <= CP and roll_back_time <= max(self.time_windows[j, 0], CT):
                         CT = math.inf
 
-                label, lower_bound, terminate = self.bound_calculator(j, copy_label, RC, CT, CP,
-                                                                      best_bound, solve, start_time)
+                label, lower_bound = self.bound_calculator(j, copy_label, RC, CT, CP,
+                                                           best_bound, solve)
 
                 if lower_bound < best_bound:
                     best_bound = lower_bound
                     best_label = label
 
-                if terminate:
-                    break
-
-        return best_label, best_bound, terminate
+        return best_label, best_bound
 
     def dynamic_program(self, start_point, current_label, unvisited_customers, remaining_capacity,
                         current_time, current_price):
@@ -539,7 +520,7 @@ class Subproblem:
         threads = []
         best_routes = []
         best_costs = []
-
+        self.primal_bound = min(numpy.min(self.bounds), 0)
         for cus in self.price_arrangement[0]:
             start_point = cus
             if (0, cus) not in self.forbidden_edges:
@@ -549,16 +530,15 @@ class Subproblem:
                 current_price = self.price[0, cus]
                 best_bound = 0
                 solve = True
-                start_time = time.time()
                 thread = Bound_Threader(target=self.bound_calculator, args=(start_point, current_label,
                                                                             remaining_capacity,
                                                                             current_time, current_price,
-                                                                            best_bound, solve, start_time))
+                                                                            best_bound, solve))
                 thread.start()
                 threads.append(thread)
 
         for index, thread in enumerate(threads):
-            label, cost, terminate = thread.join()
+            label, cost = thread.join()
             best_routes.append(label)
             best_costs.append(cost)
 
@@ -641,7 +621,7 @@ def main():
     num_customers = args.num_customers
 
     global heuristic
-    heuristic = True
+    heuristic = False
 
     file = "config.json"
     with open(file, 'r') as f:
@@ -667,14 +647,17 @@ def main():
         initial_costs = []
         initial_orders = []
 
-        sol, obj, routes, costs, orders, results_dict = solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix,
-                                                                              demands,
-                                                                              time_windows,
-                                                                              num_customers, service_times,
-                                                                              forbidden_edges,
-                                                                              compelled_edges,
-                                                                              initial_routes, initial_costs,
-                                                                              initial_orders)
+        sol, obj, routes, costs, orders, results_dict = solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity,
+                                                                                            time_matrix,
+                                                                                            demands,
+                                                                                            time_windows,
+                                                                                            num_customers,
+                                                                                            service_times,
+                                                                                            forbidden_edges,
+                                                                                            compelled_edges,
+                                                                                            initial_routes,
+                                                                                            initial_costs,
+                                                                                            initial_orders)
 
         print("solution: " + str(sol))
         print("objective: " + str(obj))
@@ -687,9 +670,6 @@ def main():
     std_obj = statistics.stdev(results)
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
-
-    #pp.hist(results)
-    #pp.show()
 
     pickle_out = open('DP Results N=' + str(num_customers), 'wb')
     pickle.dump(performance_dicts, pickle_out)
