@@ -16,13 +16,9 @@ from graph_reduction import Node_Reduction
 
 import matplotlib.pyplot as pp
 
-sys.path.insert(0, r'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO')
-sys.path.insert(0, r'C:/Users/abdug/Python/POMO-implementation/ESPRCTW')
 from ESPRCTWEnv import ESPRCTWEnv as Env
 from ESPRCTWModel import ESPRCTWModel as Model
-
-sys.path.insert(0, r'C:/Users/abdug/Python/UL4TSP/PP')
-from models import GNN
+from UL_models import GNN
 
 
 def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, demands, time_windows,
@@ -94,13 +90,13 @@ def RL_solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix
         prices = create_price(time_matrix, duals)
 
         time_1 = time.time()
-        f0 = torch.tensor(np.expand_dims(coords[1:, :], 0),dtype=torch.float32)
-        f1 = torch.tensor(np.expand_dims(time_windows[1:, :], 0),dtype=torch.float32)
-        f2 = torch.tensor(np.expand_dims(duals[1:], 0),dtype=torch.float32)
+        f0 = torch.tensor(np.expand_dims(coords[1:, :], 0), dtype=torch.float32)  #### SCALE INPUT
+        f1 = torch.tensor(np.expand_dims(time_windows[1:, :], 0), dtype=torch.float32)
+        f2 = torch.tensor(np.expand_dims(duals[1:], 0), dtype=torch.float32)
         dims = f2.shape
         f2 = torch.reshape(f2, (dims[0], dims[1], 1))
         X = torch.cat([f0, f1, f2], dim=2)
-        distance_m = torch.tensor(np.expand_dims(time_matrix[1:, 1:], 0),dtype=torch.float32)
+        distance_m = torch.tensor(np.expand_dims(time_matrix[1:, 1:], 0), dtype=torch.float32)
         adj = torch.exp(-1. * distance_m / temperature)
         output = GR(X, adj)
         sorted_indices = output.argsort(dim=1, descending=True)[0, :reduction_size]

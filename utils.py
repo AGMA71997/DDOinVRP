@@ -359,9 +359,9 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 
 
 def main():
-    method = 'DP'
+    method = 'RL'
     num_customers = 50
-    scaler = '2+(1-100)'
+    scaler = '2 Nby2'
 
     result_analyzer(method, num_customers, scaler)
 

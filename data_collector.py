@@ -12,6 +12,7 @@ import time
 import pickle
 import os
 import argparse
+import random
 
 
 def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
@@ -53,25 +54,32 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
     added_orders = initial_orders
     reoptimize = True
-    max_iter = 5000
+    max_iter = 1000
+    max_time = 3 * 60
+    start_time = time.time()
     iteration = 0
     consecutive_count = 0
-    arc_red = True
-    price_based = True
+    arc_red = False
+    price_based = False
     obj_val_prev = math.inf
+    non_zeros = []
     # Iterate until optimality is reached
     try:
         while iteration < max_iter:
+
+            if time.time() - start_time > max_time:
+                print("Time Limit Reached")
+                break
+
             master_problem.solve()
             duals = master_problem.retain_duals()
-            non_zeros = [x for x in duals if x != 0]
-            print(min(non_zeros))
+            non_zeros += [x for x in duals if x != 0]
             '''print(len(non_zeros))
             print(statistics.mean(non_zeros))
             print(max(non_zeros))
             print(min(non_zeros))
-            print(non_zeros)'''
-            print("###############")
+            print(non_zeros)
+            print("###############")'''
 
             coords_list.append(coords)
             time_matrix_list.append(time_matrix)
@@ -83,7 +91,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
             prices = create_price(time_matrix, duals) * -1
 
-            NR = Node_Reduction(duals, coords)
+            NR = Node_Reduction(coords, duals)
             if price_based:
                 red_cor = NR.price_based_elimination(time_matrix)
             else:
@@ -163,8 +171,11 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
                     print("Addition Failed")
                     reoptimize = False
                     break
+
         if reoptimize:
             master_problem.solve()
+
+        print("The non-zero mean of duals is: "+str(statistics.mean(non_zeros)))
         sol, obj = master_problem.extract_solution()
         routes, costs, orders = master_problem.extract_columns()
         master_problem.__delete__()
@@ -176,9 +187,12 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
 
 def main():
+    random.seed(10)
+    numpy.random.seed(10)
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--file_sequence', type=str, default="")
-    parser.add_argument('--num_customers', type=int, default=100)
+    parser.add_argument('--num_customers', type=int, default=200)
     parser.add_argument('--heuristic', type=bool, default=True)
     args = parser.parse_args()
     num_customers = args.num_customers
@@ -198,48 +212,51 @@ def main():
     duals_list = []
     service_times_list = []
 
-    directory = config["Solomon Training Dataset"]
-    for instance in os.listdir(directory):
-        if instance.startswith(args.file_sequence):
+    # directory = config["Solomon Training Dataset"]
+    # for instance in os.listdir(directory):
+    for experiment in range(50):
+        print("This instance has " + str(num_customers) + " customers.")
+        # if instance.startswith(args.file_sequence):
             # file = directory + "/" + instance
-            file = directory + "/" + "RC204.txt"
-            print(file)
-            VRP_instance = Instance_Generator(file_path=file, config=config)
-            forbidden_edges = []
-            compelled_edges = []
-            initial_routes = []
-            initial_costs = []
-            initial_orders = []
-            global start_time
-            start_time = time.time()
+            # print(file)
+            # VRP_instance = Instance_Generator(file_path=file, config=config)
+        VRP_instance = Instance_Generator(N=num_customers)
 
-            sol, obj, routes, costs, orders = generate_CVRPTW_data(VRP_instance,
-                                                                   forbidden_edges,
-                                                                   compelled_edges,
-                                                                   initial_routes, initial_costs,
-                                                                   initial_orders, coords_list,
-                                                                   time_matrix_list,
-                                                                   time_windows_list, demands_list,
-                                                                   duals_list,
-                                                                   vehicle_capacity_list, service_times_list)
-            time_2 = time.time()
+        forbidden_edges = []
+        compelled_edges = []
+        initial_routes = []
+        initial_costs = []
+        initial_orders = []
 
-            print("time: " + str(time_2 - start_time))
-            print("solution: " + str(sol))
-            print("objective: " + str(obj))
-            print("number of columns: " + str(len(orders)))
+        time_1 = time.time()
 
-            if not sol:
-                break
+        sol, obj, routes, costs, orders = generate_CVRPTW_data(VRP_instance,
+                                                               forbidden_edges,
+                                                               compelled_edges,
+                                                               initial_routes, initial_costs,
+                                                               initial_orders, coords_list,
+                                                               time_matrix_list,
+                                                               time_windows_list, demands_list,
+                                                               duals_list,
+                                                               vehicle_capacity_list, service_times_list)
+        time_2 = time.time()
 
-    if heuristic:
+        print("time: " + str(time_2 - time_1))
+        print("solution: " + str(sol))
+        print("objective: " + str(obj))
+        print("number of columns: " + str(len(orders)))
+
+        if not sol:
+            break
+
+    '''if heuristic:
         os.chdir(config["storge_directory_raw_heuristic"] + "/" + str(num_customers))
     else:
         os.chdir(config["storge_directory_raw"] + "/" + str(num_customers))
     pickle_out = open('SAMPLE_ESPRCTW_instances_' + str(num_customers) + "_Solomon_" + str(time_2), 'wb')
     pickle.dump([coords_list, time_matrix_list, time_windows_list, demands_list, service_times_list,
                  vehicle_capacity_list, duals_list], pickle_out)
-    pickle_out.close()
+    pickle_out.close()'''
 
 
 if __name__ == "__main__":

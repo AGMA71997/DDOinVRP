@@ -13,8 +13,6 @@ import argparse
 
 import matplotlib.pyplot as pp
 
-sys.path.insert(0, r'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO')
-sys.path.insert(0, r'C:/Users/abdug/Python/POMO-implementation/ESPRCTW')
 from ESPRCTWEnv import ESPRCTWEnv as Env
 from ESPRCTWModel import ESPRCTWModel as Model
 

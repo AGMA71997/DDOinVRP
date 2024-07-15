@@ -1,6 +1,4 @@
-import numpy
-import math
-from utils import create_price
+from utils import *
 
 
 class Arc_Reduction(object):
