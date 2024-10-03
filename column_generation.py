@@ -13,9 +13,16 @@ import matplotlib.pyplot as pp
 from graph_reduction import Node_Reduction, Arc_Reduction
 
 
-def solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, demands, time_windows, num_customers,
-                                        service_times, forbidden_edges, compelled_edges,
-                                        initial_routes, initial_costs, initial_orders):
+def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled_edges, initial_routes,
+                                        initial_costs, initial_orders):
+    coords = VRP_instance.coords
+    time_matrix = VRP_instance.time_matrix
+    time_windows = VRP_instance.time_windows
+    demands = VRP_instance.demands
+    vehicle_capacity = VRP_instance.vehicle_capacity
+    service_times = VRP_instance.service_times
+    num_customers = VRP_instance.N
+
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
 
@@ -40,13 +47,13 @@ def solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, d
 
     added_orders = initial_orders
     reoptimize = True
-    max_iter = 1000
-    max_time = 5 * 60
+    max_iter = 5000
+    max_time = 10 * 60
     start_time = time.time()
     results_dict = {}
     iteration = 0
     cum_time = 0
-    dual_plot = []
+    arc_red = True
     while iteration < max_iter:
 
         if time.time() - start_time > max_time:
@@ -55,8 +62,6 @@ def solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, d
 
         master_problem.solve()
         duals = master_problem.retain_duals()
-
-        dual_plot += duals
 
         prices = create_price(time_matrix, duals) * -1
 
@@ -76,7 +81,7 @@ def solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, d
                                 red_duals, red_sts, forbidden_edges)
 
         if heuristic:
-            ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic()
+            ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red)
         else:
             ordered_route, reduced_cost, top_labels = subproblem.solve()
         time_22 = time.time()
@@ -90,7 +95,7 @@ def solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, d
         iteration += 1
         obj_val = master_problem.model.objval
         cum_time += time_22 - time_11
-        if iteration % 1 == 0:
+        if iteration % 10 == 0:
             print("Iteration: " + str(iteration))
             # print("Solving time for PP is: " + str(time_22 - time_11))
             print("RC is " + str(reduced_cost))
@@ -101,7 +106,7 @@ def solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, d
             results_dict[iteration] = (obj_val, time.time() - start_time)
 
         # Check if the candidate column is optimal
-        if reduced_cost < 0 and ordered_route not in added_orders:
+        if reduced_cost < -0.001:
             # Add the column to the master problem
             master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
             added_orders.append(ordered_route)
@@ -112,6 +117,9 @@ def solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, d
                 route = convert_ordered_route(label, num_customers)
                 master_problem.add_columns([route], [cost], [label], forbidden_edges, compelled_edges)
                 added_orders.append(label)
+        elif arc_red:
+            arc_red = False
+            print("changed arc red mode.")
         else:
             # Optimality has been reached
             reoptimize = False
@@ -123,15 +131,7 @@ def solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity, time_matrix, d
     sol, obj = master_problem.extract_solution()
     results_dict["Final"] = (obj, time.time() - start_time)
     routes, costs, orders = master_problem.extract_columns()
-    '''for order in orders:
-        if not check_route_feasibility(order, time_matrix, time_windows, service_times, demands, vehicle_capacity):
-            print("Infeasible route detected")
-            sys.exit(0)'''
     master_problem.__delete__()
-
-    # pp.hist(dual_plot, bins=50)
-    # print("Average duals: " + str(statistics.mean(dual_plot)))
-    # pp.show()
     return sol, obj, routes, costs, orders, results_dict
 
 
@@ -406,15 +406,18 @@ class Subproblem:
     def DP_heuristic(self, start_point, current_label,
                      remaining_capacity, current_time, current_price, best_bound, start_time):
 
+        if start_time is None:
+            start_time = time.time()
+
         terminate = self.terminate
-        if time.time() - start_time > 5:
+        if time.time() - start_time > 3:
             terminate = True
 
         if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0 or terminate:
             return [], math.inf, terminate
 
         if start_point == 0 and len(current_label) > 1:
-            if current_price < -0.001:
+            if current_price < -1:
                 self.col_count += 1
                 terminate = True
                 if self.col_count == self.max_columns:
@@ -427,47 +430,50 @@ class Subproblem:
 
         best_label = []
         for j in self.price_arrangement[start_point]:
-            if j > 0:
-                if j in current_label:
-                    continue
+            if self.price[start_point, j] == math.inf:
+                break
             else:
-                if start_point == 0:
-                    continue
+                if j > 0:
+                    if j in current_label:
+                        continue
+                else:
+                    if start_point == 0:
+                        continue
 
-            if [start_point, j] not in self.forbidden_edges and self.price[start_point, j] != math.inf:
+                if [start_point, j] not in self.forbidden_edges:
 
-                copy_label = current_label.copy()
-                RC = remaining_capacity
-                CT = current_time
-                CP = current_price
+                    copy_label = current_label.copy()
+                    RC = remaining_capacity
+                    CT = current_time
+                    CP = current_price
 
-                copy_label.append(j)
-                RC -= self.demands[j]
-                CT += self.time_matrix[start_point, j]
-                CP += self.price[start_point, j]
+                    copy_label.append(j)
+                    RC -= self.demands[j]
+                    CT += self.time_matrix[start_point, j]
+                    CP += self.price[start_point, j]
 
-                if len(copy_label) > 2 and j != 0:
-                    roll_back_price = CP - (self.price[copy_label[-3], start_point] + self.price[start_point, j]) + \
-                                      self.price[copy_label[-3], j]
+                    if len(copy_label) > 2 and j != 0:
+                        roll_back_price = CP - (self.price[copy_label[-3], start_point] + self.price[start_point, j]) + \
+                                          self.price[copy_label[-3], j]
 
-                    roll_back_time = CT - (
-                            self.time_matrix[start_point, j] + self.service_times[start_point] + waiting_time +
-                            self.time_matrix[copy_label[-3], start_point])
-                    roll_back_time += self.time_matrix[copy_label[-3], j]
-                    roll_back_time = max(roll_back_time, self.time_windows[j, 0])
+                        roll_back_time = CT - (
+                                self.time_matrix[start_point, j] + self.service_times[start_point] + waiting_time +
+                                self.time_matrix[copy_label[-3], start_point])
+                        roll_back_time += self.time_matrix[copy_label[-3], j]
+                        roll_back_time = max(roll_back_time, self.time_windows[j, 0])
 
-                    if roll_back_price <= CP and roll_back_time <= max(self.time_windows[j, 0], CT):
-                        CT = math.inf
+                        if roll_back_price <= CP and roll_back_time <= max(self.time_windows[j, 0], CT):
+                            CT = math.inf
 
-                label, lower_bound, terminate = self.DP_heuristic(j, copy_label, RC, CT, CP,
-                                                                  best_bound, start_time)
+                    label, lower_bound, terminate = self.DP_heuristic(j, copy_label, RC, CT, CP,
+                                                                      best_bound, start_time)
 
-                if lower_bound < best_bound:
-                    best_bound = lower_bound
-                    best_label = label
+                    if lower_bound < best_bound:
+                        best_bound = lower_bound
+                        best_label = label
 
-                if terminate:
-                    break
+                    if terminate:
+                        break
 
         return best_label, best_bound, terminate
 
@@ -491,7 +497,7 @@ class Subproblem:
                     current_time = self.time_matrix[0, cus]
                     current_price = self.price[0, cus]
                     best_bound = 0
-                    start_time = time.time()
+                    start_time = None
                     thread = Bound_Threader(target=self.DP_heuristic, args=(start_point, current_label,
                                                                             remaining_capacity,
                                                                             current_time, current_price,
@@ -504,6 +510,12 @@ class Subproblem:
                 best_routes.append(label)
                 best_costs.append(cost)
 
+            counter = []
+            for label in best_routes:
+                counter += label
+            counter = set(counter)
+            # print("Unique customers: "+str(len(counter)))
+            # print("With order: "+str(sorted(counter)))
             price = min(best_costs)
             best_index = best_costs.index(price)
             label = best_routes[best_index]
@@ -616,12 +628,12 @@ def main():
     random.seed(10)
     np.random.seed(10)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_customers', type=int, default=100)
+    parser.add_argument('--num_customers', type=int, default=200)
     args = parser.parse_args()
     num_customers = args.num_customers
 
     global heuristic
-    heuristic = False
+    heuristic = True
 
     file = "config.json"
     with open(file, 'r') as f:
@@ -629,30 +641,19 @@ def main():
 
     results = []
     performance_dicts = []
-    for experiment in range(50):
+    for experiment in range(5):
         # instance = config["Solomon Test Dataset"] + "/RC208.txt"
         # print("The following instance is used: " + instance)
         VRP_instance = Instance_Generator(N=num_customers)
         # VRP_instance = Instance_Generator(file_path=instance, config=config)
         print("This instance has " + str(num_customers) + " customers.")
-        coords = VRP_instance.coords
-        time_matrix = VRP_instance.time_matrix
-        time_windows = VRP_instance.time_windows
-        demands = VRP_instance.demands
-        vehicle_capacity = VRP_instance.vehicle_capacity
-        service_times = VRP_instance.service_times
         forbidden_edges = []
         compelled_edges = []
         initial_routes = []
         initial_costs = []
         initial_orders = []
 
-        sol, obj, routes, costs, orders, results_dict = solve_relaxed_vrp_with_time_windows(coords, vehicle_capacity,
-                                                                                            time_matrix,
-                                                                                            demands,
-                                                                                            time_windows,
-                                                                                            num_customers,
-                                                                                            service_times,
+        sol, obj, routes, costs, orders, results_dict = solve_relaxed_vrp_with_time_windows(VRP_instance,
                                                                                             forbidden_edges,
                                                                                             compelled_edges,
                                                                                             initial_routes,

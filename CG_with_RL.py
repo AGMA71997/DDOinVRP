@@ -118,28 +118,7 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
 
                 master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
                 added_orders.append(ordered_route)
-            '''elif not changed:
-            changed = True
-            model_load = {
-                'path': 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/model50_scaler_max_t_data',
-                'epoch': 200}
-            checkpoint_fullname = '{path}/checkpoint-{epoch}.pt'.format(**model_load)
-            checkpoint = torch.load(checkpoint_fullname, map_location=device)
-            model.load_state_dict(checkpoint['model_state_dict'])
-            ##############################
-
-            print("CG is being used")
-            subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
-                                    red_duals, red_sts, forbidden_edges)
-            ordered_route, reduced_cost, top_labels = subproblem.solve()
-            print("reduced cost of generated column is: " + str(reduced_cost))
-            ordered_route = remap_route(ordered_route, cus_mapping)
-            cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
-            route = convert_ordered_route(ordered_route, num_customers)
-            if reduced_cost < 0 and ordered_route not in added_orders:
-                # Add the column to the master problem
-                master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
-                added_orders.append(ordered_route)'''
+            # SEE code_blocks.py
         else:
             # Optimality has been reached
             print("No columns with negative reduced cost found.")
@@ -194,30 +173,33 @@ class ESPRCTW_RL_solver(object):
             state, reward, done = self.env.step(selected)
             # shape: (batch, pomo)
 
-        # print(-1*reward)
         real_rewards = self.return_real_reward(decisions)
 
-        best_rewards_indexes = real_rewards.argmin(dim=1)
+        best_rewards_indexes = real_rewards.argmin(dim=1)[0]
 
-        best_column = torch.tensor(decisions[:, 0, best_rewards_indexes[0]], dtype=torch.int).tolist()
+        best_column = torch.tensor(decisions[:, 0, best_rewards_indexes], dtype=torch.int).tolist()
+        # negative_reduced_costs = real_rewards < -0.001
+        # indices = negative_reduced_costs.nonzero()
+        sorted_indices = torch.argsort(real_rewards, dim=1, descending=False)[0]
 
-        negative_reduced_costs = real_rewards < -0.0000001
-        indices = negative_reduced_costs.nonzero()
         promising_columns = []
-        for index in indices:
-            column = torch.tensor(decisions[:, index[0], index[1]], dtype=torch.int)
-            column = column.tolist()
-            promising_columns.append(column)
+        for index in sorted_indices:
+            if real_rewards[0, index] < -0.001 and len(promising_columns) < 100:
+                column = torch.tensor(decisions[:, 0, index], dtype=torch.int)
+                column = column.tolist()
+                promising_columns.append(column)
+            else:
+                break
 
-        return promising_columns, best_column, float(real_rewards[0, best_rewards_indexes[0]])
+        return promising_columns, best_column, float(real_rewards[0, best_rewards_indexes])
 
 
 def main():
     random.seed(10)
     np.random.seed(10)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_customers', type=int, default=50)
-    example_path = 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/model50_scaler2_Nby2'
+    parser.add_argument('--num_customers', type=int, default=1000)
+    example_path = 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/model100_scaler1_Nby2'
     parser.add_argument('--model_path', type=str, default=example_path)
     parser.add_argument('--epoch', type=int, default=200)
     args = parser.parse_args()
@@ -235,7 +217,7 @@ def main():
     red_costs = []
     # directory = config["Solomon Test Dataset"]
     # for instance in os.listdir(directory):
-    for experiment in range(50):
+    for experiment in range(10):
         # file = directory + "/" + instance
         # file = directory + "/" + "C206.txt"
         # print(file)

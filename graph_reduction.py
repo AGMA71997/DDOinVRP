@@ -1,3 +1,5 @@
+import numpy
+
 from utils import *
 
 
@@ -27,7 +29,7 @@ class Arc_Reduction(object):
         return self.prices
 
     def BE3(self, alpha=0.5):
-        M = math.ceil((self.N - 2)*alpha)
+        M = math.ceil((self.N - 2) * alpha)
 
         for i in range(self.N):
             cus_prices = numpy.sort(self.prices[i, :])
@@ -73,9 +75,21 @@ class Arc_Reduction(object):
 
         return self.prices
 
+    def neighbor_count(self, tw, tt, st, dem, VC, neighborhood=10):
+        prices = numpy.zeros(self.prices.shape) + math.inf
+        TC = calculate_compatibility(tw, tt, st)[1] / tw[0, 1]
+        price_adj = numpy.copy(self.prices) * numpy.exp(-1 * TC - numpy.reshape(dem / VC, (1, self.N)))
+        cheapest_neighbors = numpy.argsort(price_adj, axis=1)[:, :neighborhood]
+        for j in range(self.N):
+            for k in cheapest_neighbors[j]:
+                if TC[j, k] != math.inf and j != k:
+                    prices[j, k] = self.prices[j, k]
+
+        return prices
+
 
 class Node_Reduction(object):
-    def __init__(self, coords, duals=None):
+    def __init__(self, coords, duals):
         if duals is not None:
             self.duals = duals.copy()
         self.coords = numpy.copy(coords)
@@ -96,14 +110,12 @@ class Node_Reduction(object):
                 self.coords[x, :] = math.inf
         return self.coords
 
-    def reduce_by_indices(self,indices):
+    def reduce_by_indices(self, indices):
         for x in range(1, self.N):
-            if x - 1 not in indices:
+            if x - 1 not in indices or self.duals[x] == 0:
                 self.coords[x, :] = math.inf
 
         return self.coords
-
-
 
 
 def main():

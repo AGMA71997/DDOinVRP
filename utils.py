@@ -17,10 +17,7 @@ def result_analyzer(method, num_customers, scaler=None):
         file_name = 'DP Results N=' + str(num_customers)
     elif method == "RL":
         assert scaler is not None
-        if scaler == 0:
-            file_name = 'RL Results N=' + str(num_customers) + ' no scale'
-        else:
-            file_name = 'RL Results N=' + str(num_customers) + ' scaler' + str(scaler)
+        file_name = 'RL Results N=' + str(num_customers) + ' ' + scaler
     else:
         print("No such method")
         sys.exit(0)
@@ -121,14 +118,24 @@ def create_price(time_matrix, duals):
     return prices
 
 
-def sort_indices(duals):
-    # Enumerate the list to get (index, value) pairs
-    indexed_lst = list(enumerate(duals))
-    # Sort the list by the values (using the second element of the tuples)
-    sorted_indexed_lst = sorted(indexed_lst, key=lambda x: x[1], reverse=True)
-    # Extract the sorted indices
-    sorted_indices = [index for index, value in sorted_indexed_lst]
-    return sorted_indices
+def calculate_compatibility(time_windows, travel_times, service_times):
+    n = len(travel_times)
+    earliest = time_windows[:, 0] + service_times + travel_times
+    feasibles = earliest - numpy.reshape(time_windows[:, 1], (1, n))
+    earliest[feasibles > 0] = math.inf
+    latest = time_windows[:, 1] + service_times + travel_times
+    latest = numpy.minimum(latest, numpy.reshape(time_windows[:, 1], (1, n)))
+    latest[latest < earliest] = math.inf
+
+    waiting_early = numpy.maximum(numpy.reshape(time_windows[:, 0], (1, n)) - earliest, numpy.zeros((n, n)))
+    waiting_early[earliest == math.inf] = math.inf
+    waiting_late = numpy.maximum(numpy.reshape(time_windows[:, 0], (1, n)) - latest, numpy.zeros((n, n)))
+    waiting_late[latest == math.inf] = math.inf
+
+    TC_early = travel_times + waiting_early
+    TC_late = travel_times + waiting_late
+
+    return TC_early, TC_late
 
 
 def reshape_problem(coords, demands, time_windows, duals, service_times, time_matrix, prices):
@@ -172,7 +179,7 @@ def reshape_problem(coords, demands, time_windows, duals, service_times, time_ma
     idx = mask.any(axis=0)
     prices = prices[:, ~idx]
 
-    #print("The problem has been reduced to size: " + str(len(coords) - 1))
+    # print("The problem has been reduced to size: " + str(len(coords) - 1))
     return coords, demands, time_windows, duals, service_times, time_matrix, prices, cus_mapping
 
 
@@ -180,94 +187,6 @@ def remap_route(route, cus_mapping):
     for x in range(1, len(route) - 1):
         route[x] = cus_mapping[route[x]]
     return route
-
-
-def data_iterator(config, POMO, num_customers, heuristic, solomon):
-    if heuristic:
-        directory = config["storge_directory_raw_heuristic"] + "/" + str(num_customers)
-    else:
-        directory = config["storge_directory_raw"] + "/" + str(num_customers)
-    CL, TML, TWL, DL, STL, VCL, DUL = [], [], [], [], [], [], []
-    data_count = 0
-    for filename in os.listdir(directory):
-        print(filename)
-        f = os.path.join(directory, filename)
-        pickle_in = open(f, 'rb')
-        cl, tml, twl, dl, stl, vcl, dul = pickle.load(pickle_in)
-        data_count += len(cl)
-        CL += cl
-        TML += tml
-        TWL += twl
-        DL += dl
-        STL += stl
-        VCL += vcl
-        DUL += dul
-    print(data_count)
-
-    if POMO:
-        process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config, heuristic, solomon)
-    '''else:
-        os.chdir(config['SB3 Data'])
-        pickle_out = open('ESPRCTW_Data_' + str(num_customers), 'wb')
-        pickle.dump([TML, TWL, DL, STL, VCL, DUL], pickle_out)
-        pickle_out.close()'''
-
-
-def process_data_for_POMO(CL, TML, TWL, DL, STL, VCL, DUL, num_customers, config, heuristic, solomon):
-    depot_CL = []
-    depot_TW = []
-    PL = []
-    max_dual = 0
-    cl_scaler = 1
-    if solomon:
-        cl_scaler = 100
-
-    for x in range(len(CL)):
-        depot_CL.append(CL[x][0, :])
-        tw_scaler = TWL[x][0, 1]
-        depot_TW.append(TWL[x][0, :] / tw_scaler)
-        PL.append(create_price(TML[x], DUL[x]))
-
-        CL[x] = numpy.delete(CL[x], 0, 0) / cl_scaler
-        TWL[x] = numpy.delete(TWL[x], 0, 0) / tw_scaler
-        TML[x] = TML[x] / tw_scaler
-        DL[x] = numpy.delete(DL[x], 0, 0) / VCL[x]
-        STL[x] = numpy.delete(STL[x], 0, 0) / tw_scaler
-        if max(DUL[x]) > max_dual:
-            max_dual = max(DUL[x])
-        DUL[x] = numpy.delete(DUL[x], 0, 0)
-        min_val = numpy.min(PL[x])
-        max_val = numpy.max(PL[x])
-        PL[x] = PL[x] / max(abs(max_val), abs(min_val))
-
-    print(max_dual)
-    depot_CL = torch.tensor(numpy.stack(depot_CL), dtype=torch.float32)
-    depot_TW = torch.tensor(numpy.stack(depot_TW), dtype=torch.float32)
-    CL = torch.tensor(numpy.stack(CL), dtype=torch.float32)
-    TWL = torch.tensor(numpy.stack(TWL), dtype=torch.float32)
-    TML = torch.tensor(numpy.stack(TML), dtype=torch.float32)
-    DL = torch.tensor(numpy.stack(DL), dtype=torch.float32)
-    STL = torch.tensor(numpy.stack(STL), dtype=torch.float32)
-    DUL = torch.tensor(numpy.stack(DUL) / max_dual, dtype=torch.float32)
-    PL = torch.tensor(numpy.stack(PL), dtype=torch.float32)
-
-    depot_CL = depot_CL[:, None, :].expand(-1, 1, -1)
-    depot_TW = depot_TW[:, None, :].expand(-1, 1, -1)
-    dict = {'depot_xy': depot_CL,
-            'node_xy': CL,
-            'node_demand': DL,
-            'time_windows': TWL,
-            'depot_time_window': depot_TW,
-            'duals': DUL,
-            'service_times': STL,
-            'travel_times': TML,
-            'prices': PL}
-
-    if heuristic:
-        os.chdir(config["POMO Data Heuristic"] + "/" + str(num_customers))
-    else:
-        os.chdir(config["POMO Data"] + "/" + str(num_customers))
-    torch.save(dict, 'ESPRCTW_Data_' + str(num_customers))
 
 
 def initialize_columns(num_customers, truck_capacity, time_matrix, service_times, time_windows, demands):
@@ -360,8 +279,8 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 
 def main():
     method = 'RL'
-    num_customers = 50
-    scaler = '2 Nby2'
+    num_customers = 100
+    scaler = 'scaler1 Nby2'
 
     result_analyzer(method, num_customers, scaler)
 

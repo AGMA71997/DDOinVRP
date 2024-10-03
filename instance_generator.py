@@ -1,3 +1,5 @@
+import math
+
 import numpy
 import os
 import json
@@ -12,8 +14,8 @@ class Instance_Generator(object):
             assert N is not None
             self.coords = None
             self.time_matrix = self.create_time_matrix()
-            self.time_windows = self.create_time_windows()
-            VC_map = {20: 30, 50: 40, 100: 50, 200: 80}
+            self.time_windows = self.create_time_windows(self.time_matrix)
+            VC_map = {20: 30, 30: 30, 40: 30, 50: 40, 100: 50, 200: 50, 500: 80, 800: 150}  ###
             self.vehicle_capacity = VC_map[self.N]
             self.demands = self.create_demands()
             self.service_times = self.create_service_times()
@@ -73,12 +75,13 @@ class Instance_Generator(object):
 
         return time_matrix
 
-    def create_time_windows(self, minimum_margin=2):
+    def create_time_windows(self, time_matrix):
         time_windows = numpy.zeros((self.N + 1, 2))
         for i in range(self.N + 1):
             if i != 0:
-                time_windows[i, 0] = numpy.random.randint(0, 10)
-                time_windows[i, 1] = numpy.random.randint(time_windows[i, 0] + minimum_margin, 18)
+                time_windows[i, 0] = numpy.random.randint(max(math.floor(time_matrix[0, i]), 0), 16)
+                tw_width = numpy.random.randint(1, 3)  #######
+                time_windows[i, 1] = time_windows[i, 0] + tw_width
 
         time_windows[0, 1] = 18
 
@@ -88,7 +91,7 @@ class Instance_Generator(object):
         demands = numpy.zeros(self.N + 1)
         for i in range(self.N + 1):
             if i != 0:
-                demands[i] = numpy.random.randint(1, 10)
+                demands[i] = numpy.random.randint(1, 11)
 
         return demands
 

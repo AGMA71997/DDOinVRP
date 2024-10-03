@@ -55,12 +55,12 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
     added_orders = initial_orders
     reoptimize = True
     max_iter = 1000
-    max_time = 3 * 60
+    max_time = 5 * 60
     start_time = time.time()
     iteration = 0
     consecutive_count = 0
-    arc_red = False
-    price_based = False
+    arc_red = True
+    price_based = True
     obj_val_prev = math.inf
     non_zeros = []
     # Iterate until optimality is reached
@@ -73,7 +73,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
             master_problem.solve()
             duals = master_problem.retain_duals()
-            non_zeros += [x for x in duals if x != 0]
+            non_zeros += [x for x in duals if x > 0]
             '''print(len(non_zeros))
             print(statistics.mean(non_zeros))
             print(max(non_zeros))
@@ -126,7 +126,7 @@ def generate_CVRPTW_data(VRP_instance, forbidden_edges, compelled_edges,
 
             iteration += 1
             obj_val = master_problem.model.objval
-            if iteration % 10 == 0:
+            if iteration % 100 == 0:
                 print("Iteration: " + str(iteration))
                 print("Total solving time for PP is: " + str(time_22 - time_11))
                 print("RC is " + str(reduced_cost))
