@@ -21,7 +21,6 @@ class Arc_Reduction(object):
         indices = self.prices.ravel().argsort()
 
         relevant_prices = self.prices.ravel()[indices[0:edge_count]]
-
         for x in range(self.N):
             for y in range(1, self.N):
                 if self.prices[x, y] not in relevant_prices:

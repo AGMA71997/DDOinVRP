@@ -74,7 +74,8 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     start_time = time.time()
     arc_red = False
     reoptimize = True
-    max_time = 10 * 60
+    max_time = 60 * 60
+    prev_target = 0
     while iteration < max_iter:
 
         if time.time() - start_time > max_time:
@@ -155,8 +156,9 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
 
         if heuristic == "DP":
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
-                                    red_duals, red_sts, forbidden_edges)
+                                    red_duals, red_sts, forbidden_edges, prev_target)
             ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red)
+            prev_target = reduced_cost
         else:
             subproblem = ESPPRC(vehicle_capacity, red_dem, red_tws, red_sts, N,
                                 red_tms, red_prices)
@@ -232,7 +234,7 @@ def main():
     parser.add_argument('--num_customers', type=int, default=200)
     parser.add_argument('--reduction_size', type=int, default=100)
     parser.add_argument('--heuristic', type=str, default="DP")
-    example_path = 'C:/Users/abdug/Python/UL4CG/PP/Saved_Models/PP_200/scatgnn_layer_2_hid_64_model_100_temp_3.500.pth'
+    example_path = 'C:/Users/abdug/Python/UL4CG/PP/Saved_Models/PP_200/scatgnn_layer_2_hid_64_model_30_temp_3.500 - full exp decay.pth'
     parser.add_argument('--model_path', type=str, default=example_path)
     args = parser.parse_args()
     num_customers = args.num_customers
@@ -248,7 +250,7 @@ def main():
     results = []
     performance_dicts = []
     red_costs = []
-    for experiment in range(5):
+    for experiment in range(50):
         VRP_instance = Instance_Generator(N=num_customers)
         forbidden_edges = []
         compelled_edges = []

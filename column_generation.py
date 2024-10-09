@@ -48,12 +48,13 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
     added_orders = initial_orders
     reoptimize = True
     max_iter = 5000
-    max_time = 10 * 60
+    max_time = 60 * 60
     start_time = time.time()
     results_dict = {}
     iteration = 0
     cum_time = 0
     arc_red = True
+    prev_target = 0
     while iteration < max_iter:
 
         if time.time() - start_time > max_time:
@@ -78,10 +79,11 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
         N = len(red_cor) - 1
         time_11 = time.time()
         subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
-                                red_duals, red_sts, forbidden_edges)
+                                red_duals, red_sts, forbidden_edges, prev_target)
 
         if heuristic:
             ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red)
+            prev_target = reduced_cost
         else:
             ordered_route, reduced_cost, top_labels = subproblem.solve()
         time_22 = time.time()
@@ -118,6 +120,8 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
                 master_problem.add_columns([route], [cost], [label], forbidden_edges, compelled_edges)
                 added_orders.append(label)
         elif arc_red:
+            print("HERE")
+            break
             arc_red = False
             print("changed arc red mode.")
         else:
@@ -229,7 +233,7 @@ class MasterProblem:
 
 class Subproblem:
     def __init__(self, num_customers, vehicle_capacity, time_matrix, demands, time_windows, duals,
-                 service_times, forbidden_edges):
+                 service_times, forbidden_edges, prev_target):
         self.num_customers = num_customers
         self.vehicle_capacity = vehicle_capacity
         self.time_matrix = time_matrix
@@ -245,9 +249,11 @@ class Subproblem:
         self.primal_bound = 0
         self.primal_label = []
         self.col_count = 0
-        self.max_columns = min(self.num_customers, 10)
+        self.max_columns = min(self.num_customers, 20)
 
         self.terminate = False
+        self.target_discount = 0.8
+        self.prev_target = prev_target
 
         self.price_arrangement = self.arrange_per_price()
 
@@ -403,8 +409,8 @@ class Subproblem:
 
         return best_label, best_price
 
-    def DP_heuristic(self, start_point, current_label,
-                     remaining_capacity, current_time, current_price, best_bound, start_time):
+    def DP_heuristic(self, start_point, current_label, remaining_capacity, current_time,
+                     current_price, best_bound, start_time, target):
 
         if start_time is None:
             start_time = time.time()
@@ -417,7 +423,7 @@ class Subproblem:
             return [], math.inf, terminate
 
         if start_point == 0 and len(current_label) > 1:
-            if current_price < -1:
+            if current_price < -0.1:  # target:
                 self.col_count += 1
                 terminate = True
                 if self.col_count == self.max_columns:
@@ -430,50 +436,47 @@ class Subproblem:
 
         best_label = []
         for j in self.price_arrangement[start_point]:
-            if self.price[start_point, j] == math.inf:
-                break
+            if j > 0:
+                if j in current_label:
+                    continue
             else:
-                if j > 0:
-                    if j in current_label:
-                        continue
-                else:
-                    if start_point == 0:
-                        continue
+                if start_point == 0:
+                    continue
 
-                if [start_point, j] not in self.forbidden_edges:
+            if [start_point, j] not in self.forbidden_edges and self.price[start_point, j] != math.inf:
 
-                    copy_label = current_label.copy()
-                    RC = remaining_capacity
-                    CT = current_time
-                    CP = current_price
+                copy_label = current_label.copy()
+                RC = remaining_capacity
+                CT = current_time
+                CP = current_price
 
-                    copy_label.append(j)
-                    RC -= self.demands[j]
-                    CT += self.time_matrix[start_point, j]
-                    CP += self.price[start_point, j]
+                copy_label.append(j)
+                RC -= self.demands[j]
+                CT += self.time_matrix[start_point, j]
+                CP += self.price[start_point, j]
 
-                    if len(copy_label) > 2 and j != 0:
-                        roll_back_price = CP - (self.price[copy_label[-3], start_point] + self.price[start_point, j]) + \
-                                          self.price[copy_label[-3], j]
+                if len(copy_label) > 2 and j != 0:
+                    roll_back_price = CP - (self.price[copy_label[-3], start_point] + self.price[start_point, j]) + \
+                                      self.price[copy_label[-3], j]
 
-                        roll_back_time = CT - (
-                                self.time_matrix[start_point, j] + self.service_times[start_point] + waiting_time +
-                                self.time_matrix[copy_label[-3], start_point])
-                        roll_back_time += self.time_matrix[copy_label[-3], j]
-                        roll_back_time = max(roll_back_time, self.time_windows[j, 0])
+                    roll_back_time = CT - (
+                            self.time_matrix[start_point, j] + self.service_times[start_point] + waiting_time +
+                            self.time_matrix[copy_label[-3], start_point])
+                    roll_back_time += self.time_matrix[copy_label[-3], j]
+                    roll_back_time = max(roll_back_time, self.time_windows[j, 0])
 
-                        if roll_back_price <= CP and roll_back_time <= max(self.time_windows[j, 0], CT):
-                            CT = math.inf
+                    if roll_back_price <= CP and roll_back_time <= max(self.time_windows[j, 0], CT):
+                        CT = math.inf
 
-                    label, lower_bound, terminate = self.DP_heuristic(j, copy_label, RC, CT, CP,
-                                                                      best_bound, start_time)
+                label, lower_bound, terminate = self.DP_heuristic(j, copy_label, RC, CT, CP,
+                                                                  best_bound, start_time, target)
 
-                    if lower_bound < best_bound:
-                        best_bound = lower_bound
-                        best_label = label
+                if lower_bound < best_bound:
+                    best_bound = lower_bound
+                    best_label = label
 
-                    if terminate:
-                        break
+                if terminate:
+                    break
 
         return best_label, best_bound, terminate
 
@@ -498,10 +501,11 @@ class Subproblem:
                     current_price = self.price[0, cus]
                     best_bound = 0
                     start_time = None
+                    target = self.target_discount * self.prev_target
                     thread = Bound_Threader(target=self.DP_heuristic, args=(start_point, current_label,
                                                                             remaining_capacity,
                                                                             current_time, current_price,
-                                                                            best_bound, start_time))
+                                                                            best_bound, start_time, target))
                     thread.start()
                     threads.append(thread)
 
@@ -515,7 +519,8 @@ class Subproblem:
                 counter += label
             counter = set(counter)
             # print("Unique customers: "+str(len(counter)))
-            # print("With order: "+str(sorted(counter)))
+            # print("With order: "+str(sorted(counter))
+
             price = min(best_costs)
             best_index = best_costs.index(price)
             label = best_routes[best_index]
@@ -641,7 +646,7 @@ def main():
 
     results = []
     performance_dicts = []
-    for experiment in range(5):
+    for experiment in range(50):
         # instance = config["Solomon Test Dataset"] + "/RC208.txt"
         # print("The following instance is used: " + instance)
         VRP_instance = Instance_Generator(N=num_customers)
