@@ -1,6 +1,7 @@
 import numpy
 
 from utils import *
+import time
 
 
 class Arc_Reduction(object):
@@ -25,6 +26,7 @@ class Arc_Reduction(object):
             for y in range(1, self.N):
                 if self.prices[x, y] not in relevant_prices:
                     self.prices[x, y] = math.inf
+
         return self.prices
 
     def BE3(self, alpha=0.5):
@@ -84,6 +86,12 @@ class Arc_Reduction(object):
                 if TC[j, k] != math.inf and j != k:
                     prices[j, k] = self.prices[j, k]
 
+        return prices
+
+    def ml_arc_reduction(self, output):
+        prices = numpy.zeros(self.prices.shape) + math.inf
+        prices[output > 0.05] = self.prices[output > 0.05]
+        print(numpy.count_nonzero(~numpy.isinf(prices)))
         return prices
 
 

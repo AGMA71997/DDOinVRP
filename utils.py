@@ -14,7 +14,7 @@ def result_analyzer(method, num_customers, scaler=None):
         os.chdir('results')
 
     if method == "DP":
-        file_name = 'DP Results N=' + str(num_customers)
+        file_name = 'DP Results N=' + str(num_customers) + ' ' + scaler
     elif method == "RL":
         assert scaler is not None
         file_name = 'RL Results N=' + str(num_customers) + ' ' + scaler
@@ -25,7 +25,7 @@ def result_analyzer(method, num_customers, scaler=None):
     pickle_in = open(file_name, 'rb')
     performance_dicts = pickle.load(pickle_in)
 
-    pickle_in = open('DP Results N=' + str(num_customers), 'rb')
+    pickle_in = open('DP Results N=' + str(num_customers) + ' ULGR', 'rb')
     baseline = pickle.load(pickle_in)
 
     time_obj_map = {}
@@ -35,7 +35,7 @@ def result_analyzer(method, num_customers, scaler=None):
             time_obj_map[x] = []
     else:
         Time_limit = 3600
-        for x in range(0, Time_limit, 2):
+        for x in range(0, Time_limit, 50):
             time_obj_map[x] = []
 
     DP_catch_up = []
@@ -278,9 +278,9 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 
 
 def main():
-    method = 'RL'
-    num_customers = 100
-    scaler = 'scaler1 Nby2'
+    method = 'DP'
+    num_customers = 200
+    scaler = ''
 
     result_analyzer(method, num_customers, scaler)
 

@@ -252,7 +252,7 @@ class Subproblem:
         self.max_columns = min(self.num_customers, 20)
 
         self.terminate = False
-        self.target_discount = 0.8
+        self.target_discount = 0.5
         self.prev_target = prev_target
 
         self.price_arrangement = self.arrange_per_price()
@@ -423,7 +423,7 @@ class Subproblem:
             return [], math.inf, terminate
 
         if start_point == 0 and len(current_label) > 1:
-            if current_price < -0.1:  # target:
+            if current_price < -0.1: #target:
                 self.col_count += 1
                 terminate = True
                 if self.col_count == self.max_columns:
