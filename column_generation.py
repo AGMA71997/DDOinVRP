@@ -53,7 +53,7 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
     results_dict = {}
     iteration = 0
     cum_time = 0
-    arc_red = True
+    arc_red = False
     prev_target = 0
     while iteration < max_iter:
 
@@ -416,7 +416,7 @@ class Subproblem:
             start_time = time.time()
 
         terminate = self.terminate
-        if time.time() - start_time > 3:
+        if time.time() - start_time > 5:
             terminate = True
 
         if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0 or terminate:
@@ -646,7 +646,7 @@ def main():
 
     results = []
     performance_dicts = []
-    for experiment in range(50):
+    for experiment in range(5):
         # instance = config["Solomon Test Dataset"] + "/RC208.txt"
         # print("The following instance is used: " + instance)
         VRP_instance = Instance_Generator(N=num_customers)
@@ -677,7 +677,7 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pickle_out = open('DP Results N=' + str(num_customers), 'wb')
+    pickle_out = open('DP Results N=' + str(num_customers)+' No GR', 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 

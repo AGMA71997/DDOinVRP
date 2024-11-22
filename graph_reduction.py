@@ -88,10 +88,10 @@ class Arc_Reduction(object):
 
         return prices
 
-    def ml_arc_reduction(self, output):
+    def ml_arc_reduction(self, output, threshold):
         prices = numpy.zeros(self.prices.shape) + math.inf
-        prices[output > 0.05] = self.prices[output > 0.05]
-        print(numpy.count_nonzero(~numpy.isinf(prices)))
+        prices[output > threshold] = self.prices[output > threshold]
+        # print(numpy.count_nonzero(~numpy.isinf(prices)))
         return prices
 
 

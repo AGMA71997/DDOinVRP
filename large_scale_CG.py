@@ -27,7 +27,7 @@ from graph_reduction import Arc_Reduction
 
 def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled_edges,
                                            initial_routes, initial_costs, initial_orders, model_path,
-                                           reduction_size, heuristic, red_costs):
+                                           threshold, heuristic, red_costs):
     coords = VRP_instance.coords
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows
@@ -74,7 +74,7 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     start_time = time.time()
     arc_red = False
     reoptimize = True
-    max_time = 60 * 60
+    max_time = 1 * 60
     prev_target = 0
     while iteration < max_iter:
 
@@ -130,7 +130,7 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
 
         AR = Arc_Reduction(prices, duals)
         # red_prices = AR.neighbor_count(red_tws, red_tms, red_sts, red_dem, vehicle_capacity)
-        red_prices = AR.ml_arc_reduction(output[0])
+        red_prices = AR.ml_arc_reduction(output[0], threshold)
 
         if heuristic == "DP":
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
@@ -210,13 +210,13 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_customers', type=int, default=200)
-    parser.add_argument('--reduction_size', type=int, default=100)
+    parser.add_argument('--threshold', type=float, default=0.2)
     parser.add_argument('--heuristic', type=str, default="DP")
     example_path = 'C:/Users/abdug/Python/UL4CG/PP/Saved_Models/PP_200/scatgnn_layer_2_hid_64_model_300_temp_3.500.pth'
     parser.add_argument('--model_path', type=str, default=example_path)
     args = parser.parse_args()
     num_customers = args.num_customers
-    reduction_size = args.reduction_size
+    threshold = args.threshold
     heuristic = args.heuristic
 
     model_path = args.model_path
@@ -228,7 +228,7 @@ def main():
     results = []
     performance_dicts = []
     red_costs = []
-    for experiment in range(50):
+    for experiment in range(2):
         VRP_instance = Instance_Generator(N=num_customers)
         forbidden_edges = []
         compelled_edges = []
@@ -243,7 +243,7 @@ def main():
                                                                                                initial_costs,
                                                                                                initial_orders,
                                                                                                model_path,
-                                                                                               reduction_size,
+                                                                                               threshold,
                                                                                                heuristic,
                                                                                                red_costs)
 
@@ -259,9 +259,9 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    '''pickle_out = open('ULGR Results N=' + str(num_customers), 'wb')
+    pickle_out = open('DP Results N=' + str(num_customers) + ' ULGR ' + str(threshold), 'wb')
     pickle.dump(performance_dicts, pickle_out)
-    pickle_out.close()'''
+    pickle_out.close()
 
     # pp.hist(red_costs)
     # pp.title("Reduced Cost Histogram for POMO-CG")
