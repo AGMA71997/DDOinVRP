@@ -151,8 +151,8 @@ class ESPPRC:
                     if to_label.is_dominated():
                         continue
                     to_label.filter_dominated()
-                    if len(self.customer_labels[to_cus]) < 1000:
-                        to_be_extended.append(to_label)
+                    # if len(self.customer_labels[to_cus]) < 1000: ###################
+                    to_be_extended.append(to_label)
                 self.customer_labels[to_cus].append(to_label)
 
         labels = sorted(self.customer_labels[0], key=lambda x: x.cost)
@@ -330,7 +330,7 @@ def main():
     torch.manual_seed(20)
 
     for exp in range(10):
-        num_customers = 40
+        num_customers = 100
         VRP_instance = Instance_Generator(N=num_customers)
         capacity = VRP_instance.vehicle_capacity
         demands = VRP_instance.demands
@@ -339,10 +339,11 @@ def main():
         n_customers = VRP_instance.N
         times = VRP_instance.time_matrix
         duals = create_duals(1, n_customers,
-                               torch.tensor(times.reshape(1, n_customers + 1, n_customers + 1)))
+                             torch.tensor(times.reshape(1, n_customers + 1, n_customers + 1)))
         duals = duals.tolist()[0]
+        prices = create_price(times, duals) *-1
         algo = DSSR_ESPPRC(capacity, demands, time_windows, service_times, n_customers,
-                           times, duals)
+                           times, prices)
 
         time1 = time.time()
         opt_labels = algo.solve()

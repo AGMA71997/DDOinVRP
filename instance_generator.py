@@ -91,7 +91,7 @@ class Instance_Generator(object):
         demands = numpy.zeros(self.N + 1)
         for i in range(self.N + 1):
             if i != 0:
-                demands[i] = numpy.random.randint(1, 11)
+                demands[i] = numpy.random.randint(1, 10)
 
         return demands
 

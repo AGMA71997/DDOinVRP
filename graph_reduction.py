@@ -1,4 +1,7 @@
+import math
+
 import numpy
+import torch
 
 from utils import *
 import time
@@ -88,10 +91,48 @@ class Arc_Reduction(object):
 
         return prices
 
-    def ml_arc_reduction(self, output, threshold):
-        prices = numpy.zeros(self.prices.shape) + math.inf
-        prices[output > threshold] = self.prices[output > threshold]
-        # print(numpy.count_nonzero(~numpy.isinf(prices)))
+    def ml_arc_reduction(self, dist, m=None, threshold=None, price_adj_mat=None):
+        prices = numpy.zeros(self.prices.shape) + numpy.nan
+        if threshold is not None:
+            prices[dist >= threshold] = self.prices[dist >= threshold]
+        else:
+            for col_idx in range(dist.shape[1]):
+                # Extract the column
+                col = dist[:, col_idx]
+
+                # Find the indices of the k smallest elements
+                largest_indices = torch.topk(col, m, largest=True).indices
+
+                # Extract the k smallest elements
+                prices[largest_indices, col_idx] = self.prices[largest_indices, col_idx]
+                selected_price_adj = price_adj_mat[largest_indices, col_idx]
+                selected_price_adj = torch.sort(selected_price_adj)[0]
+                # print(col_idx, largest_indices)
+
+        '''print("############")
+        for col_idx in range(price_adj_mat.shape[1]):
+            # Extract the column
+            column = price_adj_mat[:, col_idx]
+
+            # Find the indices of the k smallest elements
+            smallest_indices = numpy.argpartition(column, m)[:m]
+
+            smallest_elements = column[smallest_indices]
+
+            # Sort the smallest elements for better readability (optional)
+            smallest_elements_sorted = numpy.sort(smallest_elements)
+
+            # Extract the k smallest elements
+            print(col_idx, smallest_elements_sorted)'''
+
+        prices[:, 0] = self.prices[:, 0]
+        numpy.fill_diagonal(prices, numpy.nan)
+        '''print(numpy.count_nonzero(~numpy.isnan(prices)))
+        print(numpy.sum(prices < 0))
+        print(numpy.count_nonzero(~numpy.isnan(prices[0, :])))
+        bob = numpy.argwhere(~numpy.isnan(prices[0, :]))
+        print(numpy.reshape(bob, (1, len(bob))))
+        print("-----------------")'''
         return prices
 
 

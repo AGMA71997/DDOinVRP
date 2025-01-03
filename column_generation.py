@@ -48,13 +48,12 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
     added_orders = initial_orders
     reoptimize = True
     max_iter = 5000
-    max_time = 60 * 60
+    max_time = 5 * 60
     start_time = time.time()
     results_dict = {}
     iteration = 0
     cum_time = 0
-    arc_red = False
-    prev_target = 0
+    arc_red = True
     while iteration < max_iter:
 
         if time.time() - start_time > max_time:
@@ -79,11 +78,10 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
         N = len(red_cor) - 1
         time_11 = time.time()
         subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
-                                red_duals, red_sts, forbidden_edges, prev_target)
+                                red_duals, red_sts, forbidden_edges)
 
         if heuristic:
             ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red)
-            prev_target = reduced_cost
         else:
             ordered_route, reduced_cost, top_labels = subproblem.solve()
         time_22 = time.time()
@@ -233,7 +231,7 @@ class MasterProblem:
 
 class Subproblem:
     def __init__(self, num_customers, vehicle_capacity, time_matrix, demands, time_windows, duals,
-                 service_times, forbidden_edges, prev_target):
+                 service_times, forbidden_edges, prices=None):
         self.num_customers = num_customers
         self.vehicle_capacity = vehicle_capacity
         self.time_matrix = time_matrix
@@ -244,16 +242,19 @@ class Subproblem:
         self.forbidden_edges = forbidden_edges
         self.duals = duals
 
-        self.price = create_price(time_matrix, duals) * -1
+        if prices is None:
+            self.price = create_price(time_matrix, duals) * -1
+        else:
+            self.price = prices
 
         self.primal_bound = 0
         self.primal_label = []
         self.col_count = 0
         self.max_columns = min(self.num_customers, 20)
+        self.thread_count = 0
+        self.max_threads = self.num_customers
 
         self.terminate = False
-        self.target_discount = 0.5
-        self.prev_target = prev_target
 
         self.price_arrangement = self.arrange_per_price()
 
@@ -410,23 +411,29 @@ class Subproblem:
         return best_label, best_price
 
     def DP_heuristic(self, start_point, current_label, remaining_capacity, current_time,
-                     current_price, best_bound, start_time, target):
+                     current_price, best_bound, start_time):
 
         if start_time is None:
             start_time = time.time()
 
         terminate = self.terminate
-        if time.time() - start_time > 5:
+        if time.time() - start_time > 3:
             terminate = True
+            self.thread_count += 1
+            # print("Thread " + str(current_label[1]) + " failed.")
+            if self.thread_count == self.max_threads:
+                self.terminate = True
 
         if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0 or terminate:
             return [], math.inf, terminate
 
         if start_point == 0 and len(current_label) > 1:
-            if current_price < -0.1: #target:
+            if current_price < -0.1:
                 self.col_count += 1
+                self.thread_count += 1
                 terminate = True
-                if self.col_count == self.max_columns:
+                # print("Thread " + str(current_label[1]) + " succeeded.")
+                if self.col_count == self.max_columns or self.thread_count == self.max_threads:
                     self.terminate = True
             return current_label, current_price, terminate
 
@@ -469,7 +476,7 @@ class Subproblem:
                         CT = math.inf
 
                 label, lower_bound, terminate = self.DP_heuristic(j, copy_label, RC, CT, CP,
-                                                                  best_bound, start_time, target)
+                                                                  best_bound, start_time)
 
                 if lower_bound < best_bound:
                     best_bound = lower_bound
@@ -494,18 +501,17 @@ class Subproblem:
             best_costs = []
             for cus in self.price_arrangement[0]:
                 start_point = cus
-                if (0, cus) not in self.forbidden_edges:
+                if (0, cus) not in self.forbidden_edges and self.price[0, cus] != math.inf:
                     current_label = [0, cus]
                     remaining_capacity = self.vehicle_capacity - self.demands[cus]
                     current_time = self.time_matrix[0, cus]
                     current_price = self.price[0, cus]
                     best_bound = 0
                     start_time = None
-                    target = self.target_discount * self.prev_target
                     thread = Bound_Threader(target=self.DP_heuristic, args=(start_point, current_label,
                                                                             remaining_capacity,
                                                                             current_time, current_price,
-                                                                            best_bound, start_time, target))
+                                                                            best_bound, start_time))
                     thread.start()
                     threads.append(thread)
 
@@ -677,7 +683,7 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pickle_out = open('DP Results N=' + str(num_customers)+' No GR', 'wb')
+    pickle_out = open('DP Results N=' + str(num_customers) + ' No GR', 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 

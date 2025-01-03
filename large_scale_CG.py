@@ -1,3 +1,5 @@
+import math
+
 import numpy
 
 from instance_generator import Instance_Generator
@@ -25,9 +27,9 @@ from UL_models import GNN
 from graph_reduction import Arc_Reduction
 
 
-def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled_edges,
+def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled_edges,
                                            initial_routes, initial_costs, initial_orders, model_path,
-                                           threshold, heuristic, red_costs):
+                                           red_param, heuristic, red_costs):
     coords = VRP_instance.coords
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows
@@ -61,10 +63,27 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     added_orders = initial_orders
 
     device = torch.device('cpu')
-    GR = GNN(input_dim=7, hidden_dim=64, output_dim=num_customers+1, n_layers=2)
+    GR = GNN(input_dim=7, hidden_dim=64, output_dim=num_customers + 1, n_layers=2)
     checkpoint_main = torch.load(model_path, map_location=device)
     GR.load_state_dict(checkpoint_main)
     temperature = 3.5
+
+    tw_scaler = time_windows[0, 1]
+
+    TC = calculate_compatibility(time_windows, time_matrix, service_times)[1]
+    TC = torch.tensor(TC, dtype=torch.float32) / tw_scaler
+
+    f0 = torch.tensor(np.expand_dims(coords, 0), dtype=torch.float32)
+    f2 = torch.tensor(np.expand_dims(time_windows, 0), dtype=torch.float32) / tw_scaler
+    f3 = torch.tensor(np.expand_dims(demands, 0), dtype=torch.float32) / vehicle_capacity
+    f4 = torch.tensor(np.expand_dims(service_times, 0), dtype=torch.float32) / tw_scaler
+
+    dims = f3.shape
+    f3 = torch.reshape(f3, (dims[0], dims[1], 1))
+    f4 = torch.reshape(f4, (dims[0], dims[1], 1))
+
+    mask = torch.ones(num_customers + 1, num_customers + 1).cpu()
+    mask.fill_diagonal_(0)
 
     # Iterate until optimality is reached
     max_iter = 5000
@@ -74,8 +93,8 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     start_time = time.time()
     arc_red = False
     reoptimize = True
-    max_time = 1 * 60
-    prev_target = 0
+    max_time = 5 * 60
+
     while iteration < max_iter:
 
         if time.time() - start_time > max_time:
@@ -90,56 +109,50 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
         price_scaler = max(abs(max_val), abs(min_val))
 
         time_1 = time.time()
-        tw_scaler = time_windows[0, 1]
-        f0 = torch.tensor(np.expand_dims(coords, 0), dtype=torch.float32)
-        f1 = torch.tensor(np.expand_dims(duals, 0), dtype=torch.float32)
-        f2 = torch.tensor(np.expand_dims(time_windows, 0), dtype=torch.float32) / tw_scaler
-        f3 = torch.tensor(np.expand_dims(demands, 0), dtype=torch.float32) / vehicle_capacity
-        f4 = torch.tensor(np.expand_dims(service_times, 0), dtype=torch.float32) / tw_scaler
-        #f5 = torch.tensor(np.expand_dims(prices[0, 1:], 0), dtype=torch.float32) / price_scaler
-        #f6 = torch.tensor(np.expand_dims(prices[1:, 0], 0), dtype=torch.float32) / price_scaler
 
-        dims = f1.shape
+        f1 = torch.tensor(np.expand_dims(duals, 0), dtype=torch.float32)
         f1 = torch.reshape(f1, (dims[0], dims[1], 1))
-        f3 = torch.reshape(f3, (dims[0], dims[1], 1))
-        f4 = torch.reshape(f4, (dims[0], dims[1], 1))
-        #f5 = torch.reshape(f5, (dims[0], dims[1], 1))
-        #f6 = torch.reshape(f6, (dims[0], dims[1], 1))
         X = torch.cat([f0, f1, f2, f3, f4], dim=2)
 
-        distance_m = torch.tensor(np.expand_dims(prices, 0), dtype=torch.float32) / price_scaler
+        p_scaled = torch.tensor(prices, dtype=torch.float32) / price_scaler
+        price_adj = torch.zeros(p_scaled.shape)
+        disc_price_neg = p_scaled * torch.exp(-1 * TC - torch.reshape(f3[0], (1, len(f3[0]))))
+        price_adj[p_scaled < 0] = disc_price_neg[p_scaled < 0]
+        disc_price_pos = p_scaled * torch.exp(TC + torch.reshape(f3[0], (1, len(f3[0]))))
+        price_adj[p_scaled > 0] = disc_price_pos[p_scaled > 0]
+        price_adj[TC == math.inf] = 2
+
+        distance_m = price_adj.unsqueeze(0)
         adj = torch.exp(-1. * distance_m / temperature)
+        adj *= mask
         output = GR(X, adj)
-        #probas = torch.sort(output, 1, descending=True)[0]
-        # print(probas[0, :reduction_size, 0])
-        # sorted_indices = output.argsort(dim=1, descending=True)[0, :reduction_size, 0]
 
-        # NR = Node_Reduction(coords, duals)
-        # red_cor = NR.reduce_by_indices(sorted_indices)
-        red_cor = numpy.copy(coords)
+        point_wise_distance = torch.matmul(output, torch.roll(torch.transpose(output, 1, 2), -1, 1))[0]
+        AR = Arc_Reduction(prices, duals)
+        if red_param < 1:
+            red_prices = AR.ml_arc_reduction(point_wise_distance, threshold=red_param, price_adj_mat=price_adj)
+        else:
+            red_prices = AR.ml_arc_reduction(point_wise_distance, m=red_param, price_adj_mat=price_adj)
 
-        red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices, cus_mapping = reshape_problem(red_cor,
-                                                                                                          demands,
-                                                                                                          time_windows,
-                                                                                                          duals,
-                                                                                                          service_times,
-                                                                                                          time_matrix,
-                                                                                                          prices)
+        NR = Node_Reduction(coords, duals)
+        red_cor = NR.dual_based_elimination()
+        red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices2, cus_mapping = reshape_problem(red_cor,
+                                                                                                           demands,
+                                                                                                           time_windows,
+                                                                                                           duals,
+                                                                                                           service_times,
+                                                                                                           time_matrix,
+                                                                                                           red_prices)
 
         N = len(red_cor) - 1
-
-        AR = Arc_Reduction(prices, duals)
-        # red_prices = AR.neighbor_count(red_tws, red_tms, red_sts, red_dem, vehicle_capacity)
-        red_prices = AR.ml_arc_reduction(output[0], threshold)
-
+        red_prices2[np.isnan(red_prices2)] = math.inf
         if heuristic == "DP":
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
-                                    red_duals, red_sts, forbidden_edges, prev_target)
+                                    red_duals, red_sts, forbidden_edges, red_prices2)
             ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red)
-            prev_target = reduced_cost
         else:
-            subproblem = ESPPRC(vehicle_capacity, red_dem, red_tws, red_sts, N,
-                                red_tms, red_prices)
+            subproblem = DSSR_ESPPRC(vehicle_capacity, red_dem, red_tws, red_sts, N,
+                                     red_tms, red_prices2)
             top_labels = subproblem.solve()
             if len(top_labels) > 0:
                 ordered_route = top_labels[0].path()
@@ -210,13 +223,13 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_customers', type=int, default=200)
-    parser.add_argument('--threshold', type=float, default=0.2)
+    parser.add_argument('--red_param', type=float, default=0.01)
     parser.add_argument('--heuristic', type=str, default="DP")
     example_path = 'C:/Users/abdug/Python/UL4CG/PP/Saved_Models/PP_200/scatgnn_layer_2_hid_64_model_300_temp_3.500.pth'
     parser.add_argument('--model_path', type=str, default=example_path)
     args = parser.parse_args()
     num_customers = args.num_customers
-    threshold = args.threshold
+    red_param = args.red_param
     heuristic = args.heuristic
 
     model_path = args.model_path
@@ -228,7 +241,7 @@ def main():
     results = []
     performance_dicts = []
     red_costs = []
-    for experiment in range(2):
+    for experiment in range(5):
         VRP_instance = Instance_Generator(N=num_customers)
         forbidden_edges = []
         compelled_edges = []
@@ -236,14 +249,14 @@ def main():
         initial_costs = []
         initial_orders = []
 
-        sol, obj, routes, costs, orders, results_dict = RL_solve_relaxed_vrp_with_time_windows(VRP_instance,
+        sol, obj, routes, costs, orders, results_dict = UL_solve_relaxed_vrp_with_time_windows(VRP_instance,
                                                                                                forbidden_edges,
                                                                                                compelled_edges,
                                                                                                initial_routes,
                                                                                                initial_costs,
                                                                                                initial_orders,
                                                                                                model_path,
-                                                                                               threshold,
+                                                                                               red_param,
                                                                                                heuristic,
                                                                                                red_costs)
 
@@ -259,7 +272,7 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pickle_out = open('DP Results N=' + str(num_customers) + ' ULGR ' + str(threshold), 'wb')
+    pickle_out = open('DP Results N=' + str(num_customers) + ' ULGR ' + str(red_param), 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 

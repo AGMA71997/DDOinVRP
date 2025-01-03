@@ -25,8 +25,9 @@ def result_analyzer(method, num_customers, scaler=None):
     pickle_in = open(file_name, 'rb')
     performance_dicts = pickle.load(pickle_in)
 
-    pickle_in = open('DP Results N=' + str(num_customers) + ' ULGR', 'rb')
+    pickle_in = open('DP Results N=' + str(num_customers) + ' No GR ver02', 'rb')
     baseline = pickle.load(pickle_in)
+    unmatched = 0
 
     time_obj_map = {}
     if method == "RL":
@@ -52,20 +53,27 @@ def result_analyzer(method, num_customers, scaler=None):
                     time_obj_map[key2].append(obj_gap)
                     break
 
-        RL_final = instance_dict['Final'][0]
+        algo_final = instance_dict['Final'][0]
         stoppage = None
         for key in baseline_dict:
             if key == "Final":
                 continue
 
-            if baseline_dict[key][0] <= RL_final:
+            if baseline_dict[key][0] <= algo_final:
                 stoppage = baseline_dict[key][1]
                 break
 
         if stoppage is None:
-            factor = (baseline_dict['Final'][0] - instance_dict['Final'][0]) / instance_dict['Final'][0]
-            stoppage = baseline_dict['Final'][1] * (1 + factor)
-        DP_catch_up.append(stoppage / instance_dict['Final'][1])
+            if baseline_dict['Final'][0] <= algo_final:
+                stoppage = baseline_dict['Final'][1]
+                DP_catch_up.append(stoppage / instance_dict['Final'][1])
+            else:
+                unmatched += 1
+                continue
+                # factor = (baseline_dict['Final'][0] - instance_dict['Final'][0]) / instance_dict['Final'][0]
+                # stoppage = 3600  # baseline_dict['Final'][1] * math.exp(factor)
+        else:
+            DP_catch_up.append(stoppage / instance_dict['Final'][1])
 
     CI = {}
     x = []
@@ -91,6 +99,7 @@ def result_analyzer(method, num_customers, scaler=None):
     except:
         print("already deleted")
 
+    print("Unmatched objectives: " + str(unmatched))
     print("Average final objective gap is: " + str(statistics.mean(Gaps)))
     print("Objective gaps along iterations:" + str(y))
     print("Run time along iterations: " + str(x))
@@ -120,20 +129,19 @@ def create_price(time_matrix, duals):
 
 def calculate_compatibility(time_windows, travel_times, service_times):
     n = len(travel_times)
-    earliest = time_windows[:, 0] + service_times + travel_times
-    feasibles = earliest - numpy.reshape(time_windows[:, 1], (1, n))
+    earliest = numpy.reshape(time_windows[:, 0], (n, 1)) + numpy.reshape(service_times, (n, 1)) \
+               + travel_times
+    feasibles = earliest - time_windows[:, 1]
     earliest[feasibles > 0] = math.inf
-    latest = time_windows[:, 1] + service_times + travel_times
+    latest = numpy.reshape(time_windows[:, 1], (n, 1)) + numpy.reshape(service_times, (n, 1)) \
+             + travel_times
     latest = numpy.minimum(latest, numpy.reshape(time_windows[:, 1], (1, n)))
-    latest[latest < earliest] = math.inf
+    latest[earliest == math.inf] = math.inf
 
-    waiting_early = numpy.maximum(numpy.reshape(time_windows[:, 0], (1, n)) - earliest, numpy.zeros((n, n)))
-    waiting_early[earliest == math.inf] = math.inf
-    waiting_late = numpy.maximum(numpy.reshape(time_windows[:, 0], (1, n)) - latest, numpy.zeros((n, n)))
-    waiting_late[latest == math.inf] = math.inf
-
-    TC_early = travel_times + waiting_early
-    TC_late = travel_times + waiting_late
+    TC_early = numpy.maximum(earliest, numpy.reshape(time_windows[:, 0], (1, n)))
+    TC_late = numpy.maximum(latest, numpy.reshape(time_windows[:, 0], (1, n)))
+    numpy.fill_diagonal(TC_early, math.inf)
+    numpy.fill_diagonal(TC_late, math.inf)
 
     return TC_early, TC_late
 
@@ -178,7 +186,6 @@ def reshape_problem(coords, demands, time_windows, duals, service_times, time_ma
     mask = (prices == math.inf)
     idx = mask.any(axis=0)
     prices = prices[:, ~idx]
-
     # print("The problem has been reduced to size: " + str(len(coords) - 1))
     return coords, demands, time_windows, duals, service_times, time_matrix, prices, cus_mapping
 
@@ -279,8 +286,8 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 
 def main():
     method = 'DP'
-    num_customers = 200
-    scaler = ''
+    num_customers = 1000
+    scaler = 'ULGR 0.2'
 
     result_analyzer(method, num_customers, scaler)
 
