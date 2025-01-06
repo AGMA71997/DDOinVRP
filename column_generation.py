@@ -526,13 +526,16 @@ class Subproblem:
             counter = set(counter)
             # print("Unique customers: "+str(len(counter)))
             # print("With order: "+str(sorted(counter))
-
-            price = min(best_costs)
-            best_index = best_costs.index(price)
-            label = best_routes[best_index]
-            best_routes.remove(label)
-            best_costs.remove(price)
-            promising_labels = [best_routes[x] for x in range(len(best_routes)) if best_costs[x] < -0.001]
+            if len(best_costs) > 0:
+                price = min(best_costs)
+                best_index = best_costs.index(price)
+                label = best_routes[best_index]
+                best_routes.remove(label)
+                best_costs.remove(price)
+                promising_labels = [best_routes[x] for x in range(len(best_routes)) if best_costs[x] < -0.001]
+            else:
+                label, promising_labels = [], []
+                price = 0
         return label, price, promising_labels
 
     def solve(self):
@@ -546,7 +549,7 @@ class Subproblem:
         self.primal_bound = min(numpy.min(self.bounds), 0)
         for cus in self.price_arrangement[0]:
             start_point = cus
-            if (0, cus) not in self.forbidden_edges:
+            if (0, cus) not in self.forbidden_edges and self.price[0, cus] != math.inf:
                 current_label = [0, cus]
                 remaining_capacity = self.vehicle_capacity - self.demands[cus]
                 current_time = self.time_matrix[0, cus]
