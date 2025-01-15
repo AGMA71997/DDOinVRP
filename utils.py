@@ -9,7 +9,7 @@ import sys
 import statistics
 
 
-def result_analyzer(method, num_customers, scaler=None):
+def result_analyzer(method, base, num_customers, scaler=None):
     if not os.getcwd().endswith('results'):
         os.chdir('results')
 
@@ -25,7 +25,7 @@ def result_analyzer(method, num_customers, scaler=None):
     pickle_in = open(file_name, 'rb')
     performance_dicts = pickle.load(pickle_in)
 
-    pickle_in = open('DP Results N=' + str(num_customers) + ' No GR ver02', 'rb')
+    pickle_in = open('DP Results N=' + str(num_customers) + ' ' + base, 'rb')
     baseline = pickle.load(pickle_in)
     unmatched = 0
 
@@ -43,6 +43,11 @@ def result_analyzer(method, num_customers, scaler=None):
     Gaps = []
     for index, instance_dict in enumerate(performance_dicts):
         baseline_dict = baseline[index]
+
+        print(instance_dict)
+        print(baseline_dict)
+        print("--------------------")
+
         Gaps.append((instance_dict["Final"][0] - baseline_dict["Final"][0]) * 100 / baseline_dict["Final"][0])
         for key in instance_dict:
             time = instance_dict[key][1]
@@ -146,7 +151,7 @@ def calculate_compatibility(time_windows, travel_times, service_times):
     return TC_early, TC_late
 
 
-def reshape_problem(coords, demands, time_windows, duals, service_times, time_matrix, prices):
+def reshape_problem(coords, demands, time_windows, duals, service_times, time_matrix, prices, dist=None):
     coords = numpy.copy(coords)
     demands = numpy.copy(demands)
     time_windows = numpy.copy(time_windows)
@@ -166,6 +171,9 @@ def reshape_problem(coords, demands, time_windows, duals, service_times, time_ma
             time_matrix[:, x] = math.inf
             prices[x, :] = math.inf
             prices[:, x] = math.inf
+            if dist is not None:
+                dist[x, :] = math.inf
+                dist[:, x] = math.inf
         else:
             remaining_customers.append(x)
 
@@ -186,8 +194,16 @@ def reshape_problem(coords, demands, time_windows, duals, service_times, time_ma
     mask = (prices == math.inf)
     idx = mask.any(axis=0)
     prices = prices[:, ~idx]
+    if dist is not None:
+        dist = dist[dist[:, 0] != math.inf]
+        mask = (dist == math.inf)
+        idx = mask.any(axis=0)
+        dist = dist[:, ~idx]
     # print("The problem has been reduced to size: " + str(len(coords) - 1))
-    return coords, demands, time_windows, duals, service_times, time_matrix, prices, cus_mapping
+    if dist is None:
+        return coords, demands, time_windows, duals, service_times, time_matrix, prices, cus_mapping
+    else:
+        return coords, demands, time_windows, duals, service_times, time_matrix, prices, dist, cus_mapping
 
 
 def remap_route(route, cus_mapping):
@@ -263,19 +279,22 @@ def create_forbidden_edges_list(num_customers, forbidden_edges, compelled_edges)
 
 
 def check_route_feasibility(route, time_matrix, time_windows, service_times, demands_data, truck_capacity):
+    if len(route) < 3 or route[0] != 0 or route[-1] != 0:
+        return False
+
     current_time = max(time_matrix[0, route[1]], time_windows[route[1], 0])
     total_capacity = 0
 
     for i in range(1, len(route)):
         if round(current_time, 3) > time_windows[route[i], 1]:
-            print("Time Window violated")
-            print(route[i])
+            # print("Time Window violated")
+            # print(route[i])
             return False
         current_time += service_times[route[i]]
         total_capacity += demands_data[route[i]]
         if round(total_capacity, 3) > truck_capacity:
-            print("Truck Capacity Violated")
-            print(route[i])
+            # print("Truck Capacity Violated")
+            # print(route[i])
             return False
         if i < len(route) - 1:
             # travel to next node
@@ -286,10 +305,11 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 
 def main():
     method = 'DP'
-    num_customers = 1000
-    scaler = 'ULGR 0.2'
+    num_customers = 200
+    scaler = "ULGR 10"
+    base = 'with AR'
 
-    result_analyzer(method, num_customers, scaler)
+    # result_analyzer(method, base, num_customers, scaler)
 
 
 if __name__ == "__main__":

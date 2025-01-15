@@ -1,5 +1,9 @@
+import sys
+
 import numpy as np
 import gurobipy as gb
+import torch
+
 from instance_generator import Instance_Generator
 import random
 import time
@@ -11,10 +15,11 @@ import json
 
 import matplotlib.pyplot as pp
 from graph_reduction import Node_Reduction, Arc_Reduction
+from ESPPRC_heuristic import DSSR_ESPPRC, ESPPRC
 
 
 def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled_edges, initial_routes,
-                                        initial_costs, initial_orders):
+                                        initial_costs, initial_orders, policy, arc_red):
     coords = VRP_instance.coords
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows
@@ -48,12 +53,12 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
     added_orders = initial_orders
     reoptimize = True
     max_iter = 5000
-    max_time = 5 * 60
+    max_time = 60 * 60
     start_time = time.time()
     results_dict = {}
     iteration = 0
     cum_time = 0
-    arc_red = True
+    arc_red = arc_red
     while iteration < max_iter:
 
         if time.time() - start_time > max_time:
@@ -79,9 +84,20 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
         time_11 = time.time()
         subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
                                 red_duals, red_sts, forbidden_edges)
-
         if heuristic:
-            ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red)
+            if policy == "DSSR":
+                subproblem = DSSR_ESPPRC(vehicle_capacity, red_dem, red_tws, red_sts, N,
+                                         red_tms, red_prices)
+                top_labels = subproblem.solve()
+                if len(top_labels) > 0:
+                    ordered_route = top_labels[0].path()
+                    reduced_cost = top_labels[0].cost
+                    del top_labels[0]
+                else:
+                    ordered_route = []
+                    reduced_cost = 0
+            else:
+                ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red, policy=policy)
         else:
             ordered_route, reduced_cost, top_labels = subproblem.solve()
         time_22 = time.time()
@@ -111,7 +127,10 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
             master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
             added_orders.append(ordered_route)
             for x in range(len(top_labels)):
-                label = top_labels[x]
+                if policy == "DSSR":
+                    label = top_labels[x].path()
+                else:
+                    label = top_labels[x]
                 label = remap_route(label, cus_mapping)
                 cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
                 route = convert_ordered_route(label, num_customers)
@@ -246,15 +265,6 @@ class Subproblem:
             self.price = create_price(time_matrix, duals) * -1
         else:
             self.price = prices
-
-        self.primal_bound = 0
-        self.primal_label = []
-        self.col_count = 0
-        self.max_columns = min(self.num_customers, 20)
-        self.thread_count = 0
-        self.max_threads = self.num_customers
-
-        self.terminate = False
 
         self.price_arrangement = self.arrange_per_price()
 
@@ -411,13 +421,13 @@ class Subproblem:
         return best_label, best_price
 
     def DP_heuristic(self, start_point, current_label, remaining_capacity, current_time,
-                     current_price, best_bound, start_time):
+                     current_price, best_bound, start_time, thread_time_limit=3, price_lb=-0.1):
 
         if start_time is None:
             start_time = time.time()
 
         terminate = self.terminate
-        if time.time() - start_time > 3:
+        if time.time() - start_time > thread_time_limit:
             terminate = True
             self.thread_count += 1
             # print("Thread " + str(current_label[1]) + " failed.")
@@ -428,7 +438,7 @@ class Subproblem:
             return [], math.inf, terminate
 
         if start_point == 0 and len(current_label) > 1:
-            if current_price < -0.1:
+            if current_price < price_lb:
                 self.col_count += 1
                 self.thread_count += 1
                 terminate = True
@@ -487,31 +497,114 @@ class Subproblem:
 
         return best_label, best_bound, terminate
 
-    def solve_heuristic(self, arc_red=False, policy="DP"):
-        if arc_red:
-            AR = Arc_Reduction(self.price, self.duals)
-            self.price = AR.BE2()
+    def k_exchange(self, path, dist):
+        path_length = len(path)
+        new_path_list = []
+        try:
+            index = int(torch.randint(1, path_length - 1, ()))
+        except:
+            print("Infeasible Route Detected")
+            print(path)
+            sys.exit(0)
 
-        label, price = None, None
-        promising_labels = []
+        chosen = path[index]
+        dist_sum = sum([torch.sum(dist[node, :]) for node in path if node != 0])
+        if dist_sum == 0:
+            return [[]]
+        while torch.sum(dist[chosen]) == 0:
+            index = int(torch.randint(1, path_length - 1, ()))
+            chosen = path[index]
 
-        if policy == "DP":
+        randi = torch.rand(())
+        connect = None
+        for j in range(len(dist[chosen])):
+            if randi < dist[chosen, j] and (chosen, j) not in self.forbidden_edges \
+                    and self.price[chosen, j] != math.inf:
+                connect = j
+                break
+
+        if connect is None:
+            return [[]]
+        elif connect not in path:
+            new_path = path[:index + 1] + [connect] + path[index + 1:]
+            new_path_list.append(new_path)
+        else:
+            if connect == 0:
+                new_path = path[:index + 1] + [0]
+                new_path_list.append(new_path)
+            else:
+                connect_index = path.index(connect)
+                new_path = path[:]
+                if path[index + 1] != 0:
+                    new_path[index + 1], new_path[connect_index] = new_path[connect_index], new_path[index + 1]
+                    new_path_list.append(new_path)
+
+                if connect_index == index + 2:
+                    new_path = path[:index + 1] + path[index + 2:]
+                    new_path_list.append(new_path)
+
+        return new_path_list
+
+    def h_ls(self, current_path, dist, k_opt_iter):
+        """Local search algorithm H_ls for RCESPP."""
+        current_cost = sum([self.price[current_path[x], current_path[x + 1]]
+                            for x in range(len(current_path) - 1)])
+
+        for k in range(k_opt_iter):
+            neighbors = self.k_exchange(current_path, dist)  # self.generate_neighbors(current_path)
+
+            for neighbor in neighbors:
+                if check_route_feasibility(neighbor, self.time_matrix, self.time_windows,
+                                           self.service_times, self.demands, self.vehicle_capacity):
+                    neighbor_cost = sum(
+                        [self.price[neighbor[x], neighbor[x + 1]] for x in range(len(neighbor) - 1)])
+                    if neighbor_cost < current_cost:
+                        # print("Improvement Found")
+                        current_path = neighbor
+                        current_cost = neighbor_cost
+
+        return current_path, current_cost
+
+    def solve_heuristic(self, arc_red=False, policy="DP", max_columns=20, max_threads=None,
+                        k_opt_iter=100, dist=None):
+        if policy == "DP" or "k-opt":
+            self.terminate = False
+            self.col_count = 0
+            self.max_columns = min(self.num_customers, max_columns)
+            self.thread_count = 0
+            if max_threads is None:
+                self.max_threads = self.num_customers
+            else:
+                self.max_threads = max_threads
+
+            if policy == "DP" and arc_red:
+                AR = Arc_Reduction(self.price, self.duals)
+                self.price = AR.BE2()
+
             threads = []
             best_routes = []
             best_costs = []
             for cus in self.price_arrangement[0]:
                 start_point = cus
-                if (0, cus) not in self.forbidden_edges and self.price[0, cus] != math.inf:
+                if cus != 0 and (0, cus) not in self.forbidden_edges and self.price[0, cus] != math.inf:
                     current_label = [0, cus]
                     remaining_capacity = self.vehicle_capacity - self.demands[cus]
                     current_time = self.time_matrix[0, cus]
                     current_price = self.price[0, cus]
-                    best_bound = 0
+                    if policy == "DP":
+                        best_bound = 0
+                        TTL = 3
+                        PLB = -0.1
+                    else:
+                        best_bound = 0  # math.inf
+                        TTL = 2
+                        PLB = -0.1
                     start_time = None
                     thread = Bound_Threader(target=self.DP_heuristic, args=(start_point, current_label,
                                                                             remaining_capacity,
                                                                             current_time, current_price,
-                                                                            best_bound, start_time))
+                                                                            best_bound, start_time, TTL,
+                                                                            PLB))
                     thread.start()
                     threads.append(thread)
 
@@ -520,12 +613,28 @@ class Subproblem:
                 best_routes.append(label)
                 best_costs.append(cost)
 
-            counter = []
-            for label in best_routes:
-                counter += label
-            counter = set(counter)
-            # print("Unique customers: "+str(len(counter)))
-            # print("With order: "+str(sorted(counter))
+            if policy == "k-opt":
+                dist = dist + torch.transpose(dist, 0, 1)
+                row_sums = dist.sum(axis=1, keepdims=True)
+                row_sums[row_sums == 0] = 1
+                dist = dist / row_sums
+                dist = torch.cumsum(dist, dim=1)
+
+                threads = []
+                best_costs = []
+
+                for label in best_routes:
+                    if label:
+                        thread = Bound_Threader(target=self.h_ls, args=(label, dist, k_opt_iter))
+                        thread.start()
+                        threads.append(thread)
+
+                best_routes = []
+                for index, thread in enumerate(threads):
+                    new_label, cost = thread.join()
+                    best_routes.append(new_label)
+                    best_costs.append(cost)
+
             if len(best_costs) > 0:
                 price = min(best_costs)
                 best_index = best_costs.index(price)
@@ -536,9 +645,15 @@ class Subproblem:
             else:
                 label, promising_labels = [], []
                 price = 0
+        else:
+            print("Heuristic not Implemented")
+            sys.exit(0)
+
         return label, price, promising_labels
 
     def solve(self):
+        self.primal_bound = 0
+        self.primal_label = []
 
         self.determine_PULSE_bounds(2, 0.5 * self.time_windows[0, 1])
         # print("Bounds Computed")
@@ -577,49 +692,7 @@ class Subproblem:
         return best_route, best_cost, promising_labels
 
     def render_solution(self, solution):
-        print("Solution stats___________")
-        N = self.num_customers
-
-        pri = np.copy(self.price)
-        counter = 0
-        best_edges = []
-        for x in range(N):
-            i, j = np.unravel_index(pri.argmin(), pri.shape)
-            best_edges.append((i, j))
-            pri[i, j] = math.inf
-            counter += 1
-            if counter == N:
-                break
-
-        min_price = np.min(self.price)
-        max_price = np.max(self.price)
-
-        print("While the edges of the solution are: ")
-        current_time = 0
-        sol_copy = solution.copy()
-        for x in range(len(solution) - 1):
-            # print((solution[x], solution[x + 1]))
-            # print("With price: " + str(self.price[solution[x], solution[x + 1]]))
-            if self.price[solution[x], solution[x + 1]] > 0 and solution[x + 1] != 0:
-                print("Positive edge detected")
-                print((solution[x], solution[x + 1]))
-                print(self.price[solution[x], solution[x + 1]])
-                print(solution)
-                print("--------------")
-                break
-
-            # print("Is among the top " + str(N) + " edges: " + str((solution[x], solution[x + 1]) in best_edges))
-            # print("Resource consumption: ")
-            # consumed_time = self.time_matrix[solution[x], solution[x + 1]] + \
-            #                 max(self.time_windows[solution[x + 1], 0] - \
-            #                     (current_time + self.time_matrix[solution[x], solution[x + 1]]),
-            #                     0) + self.service_times[solution[x + 1]]
-            # current_time += consumed_time
-            # scaled_time = consumed_time / self.time_windows[0, 1]
-            # scaled_demand = self.demands[x + 1] / self.vehicle_capacity
-            # scaled_price = (self.price[solution[x], solution[x + 1]] - min_price) / (max_price - min_price)
-            # print("Time: " + str(scaled_time))
-            # print("Demand: " + str(scaled_demand))
+        pass
 
 
 class Bound_Threader(Thread):
@@ -643,8 +716,12 @@ def main():
     np.random.seed(10)
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_customers', type=int, default=200)
+    parser.add_argument('--policy', type=str, default='DP')
+    parser.add_argument('--AR', type=bool, default=True)
     args = parser.parse_args()
     num_customers = args.num_customers
+    policy = args.policy
+    arc_red = args.AR
 
     global heuristic
     heuristic = True
@@ -655,7 +732,7 @@ def main():
 
     results = []
     performance_dicts = []
-    for experiment in range(5):
+    for experiment in range(50):
         # instance = config["Solomon Test Dataset"] + "/RC208.txt"
         # print("The following instance is used: " + instance)
         VRP_instance = Instance_Generator(N=num_customers)
@@ -672,7 +749,8 @@ def main():
                                                                                             compelled_edges,
                                                                                             initial_routes,
                                                                                             initial_costs,
-                                                                                            initial_orders)
+                                                                                            initial_orders,
+                                                                                            policy,arc_red)
 
         print("solution: " + str(sol))
         print("objective: " + str(obj))
@@ -686,7 +764,7 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pickle_out = open('DP Results N=' + str(num_customers) + ' No GR', 'wb')
+    pickle_out = open('DP Results N=' + str(num_customers)+' '+str(arc_red), 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 

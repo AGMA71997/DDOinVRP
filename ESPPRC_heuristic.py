@@ -5,7 +5,6 @@ from ESPRCTWProblemDef import create_duals
 from instance_generator import Instance_Generator
 import time
 import random
-from column_generation import Subproblem
 
 
 class Label:
@@ -151,13 +150,13 @@ class ESPPRC:
                     if to_label.is_dominated():
                         continue
                     to_label.filter_dominated()
-                    # if len(self.customer_labels[to_cus]) < 1000: ###################
+                    # if len(self.customer_labels[to_cus]) < 20: ###################
                     to_be_extended.append(to_label)
                 self.customer_labels[to_cus].append(to_label)
 
         labels = sorted(self.customer_labels[0], key=lambda x: x.cost)
+
         final_labels = [label for label in labels if label.cost < -0.001]
-        # final_labels = final_labels[:min(200, len(final_labels))]
         return final_labels
 
     def depot_label(self):
@@ -202,6 +201,8 @@ class ESPPRC:
             return
 
         from_cus = from_label.customer
+        if self.costs[from_cus, to_cus] == math.inf:
+            return
         time = max(from_label.time + self.service_times[from_cus]
                    + self.times[from_cus, to_cus],
                    self.time_windows[to_cus, 0])
@@ -311,7 +312,10 @@ class DSSR_ESPPRC(SSR_SPPRC):
                 else:
                     yield label
 
-        return list(acyclic_labels())
+        final_labels = list(acyclic_labels())
+        print(len(final_labels))
+        # final_labels = final_labels[:min(200, len(final_labels))] ###################
+        return final_labels
 
     def extended_label(self, from_label, to_cus):
         label = super().extended_label(from_label, to_cus)
@@ -341,7 +345,7 @@ def main():
         duals = create_duals(1, n_customers,
                              torch.tensor(times.reshape(1, n_customers + 1, n_customers + 1)))
         duals = duals.tolist()[0]
-        prices = create_price(times, duals) *-1
+        prices = create_price(times, duals) * -1
         algo = DSSR_ESPPRC(capacity, demands, time_windows, service_times, n_customers,
                            times, prices)
 

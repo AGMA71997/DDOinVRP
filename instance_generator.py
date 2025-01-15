@@ -15,7 +15,7 @@ class Instance_Generator(object):
             self.coords = None
             self.time_matrix = self.create_time_matrix()
             self.time_windows = self.create_time_windows(self.time_matrix)
-            VC_map = {20: 30, 30: 30, 40: 30, 50: 40, 100: 50, 200: 50, 500: 50, 800: 150}
+            VC_map = {20: 30, 30: 30, 40: 30, 50: 40, 100: 50, 200: 50, 500: 50, 800: 150, 1000: 80}
             self.vehicle_capacity = VC_map[self.N]
             self.demands = self.create_demands()
             self.service_times = self.create_service_times()

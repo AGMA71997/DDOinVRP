@@ -93,47 +93,34 @@ class Arc_Reduction(object):
 
     def ml_arc_reduction(self, dist, m=None, threshold=None, price_adj_mat=None):
         prices = numpy.zeros(self.prices.shape) + numpy.nan
+        dist_copy = torch.zeros(dist.shape)
         if threshold is not None:
             prices[dist >= threshold] = self.prices[dist >= threshold]
         else:
-            for col_idx in range(dist.shape[1]):
+            total_rows = dist.shape[1]
+            for row_idx in range(total_rows):
                 # Extract the column
-                col = dist[:, col_idx]
+                row = dist[row_idx, :]
 
                 # Find the indices of the k smallest elements
-                largest_indices = torch.topk(col, m, largest=True).indices
+                largest_indices = torch.topk(row, m, largest=True).indices
+                # largest_values = row[largest_indices]
 
                 # Extract the k smallest elements
-                prices[largest_indices, col_idx] = self.prices[largest_indices, col_idx]
-                selected_price_adj = price_adj_mat[largest_indices, col_idx]
-                selected_price_adj = torch.sort(selected_price_adj)[0]
-                # print(col_idx, largest_indices)
+                prices[row_idx, largest_indices] = self.prices[row_idx, largest_indices]
+                dist_copy[row_idx, largest_indices] = dist[row_idx, largest_indices]
+                # selected_price_adj = price_adj_mat[largest_indices, col_idx]
+                # selected_price_adj = torch.sort(selected_price_adj)[0]]
+                # if row_idx == 0:
+                # print((row_idx, largest_values.tolist(), largest_indices.tolist()))
 
-        '''print("############")
-        for col_idx in range(price_adj_mat.shape[1]):
-            # Extract the column
-            column = price_adj_mat[:, col_idx]
-
-            # Find the indices of the k smallest elements
-            smallest_indices = numpy.argpartition(column, m)[:m]
-
-            smallest_elements = column[smallest_indices]
-
-            # Sort the smallest elements for better readability (optional)
-            smallest_elements_sorted = numpy.sort(smallest_elements)
-
-            # Extract the k smallest elements
-            print(col_idx, smallest_elements_sorted)'''
-
+        prices[0, :] = self.prices[0, :]
         prices[:, 0] = self.prices[:, 0]
         numpy.fill_diagonal(prices, numpy.nan)
-        '''print(numpy.count_nonzero(~numpy.isnan(prices)))
-        print(numpy.sum(prices < 0))
-        print(numpy.count_nonzero(~numpy.isnan(prices[0, :])))
-        bob = numpy.argwhere(~numpy.isnan(prices[0, :]))
-        print(numpy.reshape(bob, (1, len(bob))))
-        print("-----------------")'''
-        return prices
+        dist_copy[0, :] = dist[0, :]
+        dist_copy[:, 0] = dist[:, 0]
+        dist_copy.fill_diagonal_(0)
+        return prices, dist_copy
 
 
 class Node_Reduction(object):

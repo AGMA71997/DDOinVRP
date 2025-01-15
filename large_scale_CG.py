@@ -93,7 +93,7 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     start_time = time.time()
     arc_red = False
     reoptimize = True
-    max_time = 5 * 60
+    max_time = 60 * 60
 
     while iteration < max_iter:
 
@@ -130,27 +130,18 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
         point_wise_distance = torch.matmul(output, torch.roll(torch.transpose(output, 1, 2), -1, 1))[0]
         AR = Arc_Reduction(prices, duals)
         if red_param < 1:
-            red_prices = AR.ml_arc_reduction(point_wise_distance, threshold=red_param, price_adj_mat=price_adj)
+            red_prices, dist = AR.ml_arc_reduction(point_wise_distance, threshold=red_param, price_adj_mat=price_adj)
         else:
-            red_prices = AR.ml_arc_reduction(point_wise_distance, m=red_param, price_adj_mat=price_adj)
+            red_prices, dist = AR.ml_arc_reduction(point_wise_distance, m=red_param, price_adj_mat=price_adj)
 
         NR = Node_Reduction(coords, duals)
         red_cor = NR.dual_based_elimination()
-        red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices2, cus_mapping = reshape_problem(red_cor,
-                                                                                                           demands,
-                                                                                                           time_windows,
-                                                                                                           duals,
-                                                                                                           service_times,
-                                                                                                           time_matrix,
-                                                                                                           red_prices)
+        red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices2, red_dist, cus_mapping = \
+            reshape_problem(red_cor, demands, time_windows, duals, service_times, time_matrix, prices, dist)
 
         N = len(red_cor) - 1
-        red_prices2[np.isnan(red_prices2)] = math.inf
-        if heuristic == "DP":
-            subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
-                                    red_duals, red_sts, forbidden_edges, red_prices2)
-            ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red)
-        else:
+        # red_prices2[np.isnan(red_prices2)] = math.inf
+        if heuristic == "DSSR":
             subproblem = DSSR_ESPPRC(vehicle_capacity, red_dem, red_tws, red_sts, N,
                                      red_tms, red_prices2)
             top_labels = subproblem.solve()
@@ -161,7 +152,14 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
             else:
                 ordered_route = []
                 reduced_cost = 0
-
+        elif heuristic == "DP" or heuristic == "k-opt":
+            subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
+                                    red_duals, red_sts, forbidden_edges, red_prices2)
+            ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red, policy=heuristic,
+                                                                                 dist=red_dist, k_opt_iter=20)
+        else:
+            print("Not Implemented")
+            sys.exit(0)
         # red_costs.append(best_reward)
         # break
 
@@ -189,10 +187,10 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
             master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
             added_orders.append(ordered_route)
             for x in range(len(top_labels)):
-                if heuristic == "DP":
-                    label = top_labels[x]
-                else:
+                if heuristic == "DSSR":
                     label = top_labels[x].path()
+                else:
+                    label = top_labels[x]
                 label = remap_route(label, cus_mapping)
                 cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
                 route = convert_ordered_route(label, num_customers)
@@ -223,8 +221,8 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_customers', type=int, default=200)
-    parser.add_argument('--red_param', type=float, default=0.01)
-    parser.add_argument('--heuristic', type=str, default="DP")
+    parser.add_argument('--red_param', type=float, default=10)
+    parser.add_argument('--heuristic', type=str, default="k-opt")
     example_path = 'C:/Users/abdug/Python/UL4CG/PP/Saved_Models/PP_200/scatgnn_layer_2_hid_64_model_300_temp_3.500.pth'
     parser.add_argument('--model_path', type=str, default=example_path)
     args = parser.parse_args()
@@ -241,7 +239,7 @@ def main():
     results = []
     performance_dicts = []
     red_costs = []
-    for experiment in range(5):
+    for experiment in range(50):
         VRP_instance = Instance_Generator(N=num_customers)
         forbidden_edges = []
         compelled_edges = []
