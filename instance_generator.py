@@ -79,8 +79,8 @@ class Instance_Generator(object):
         time_windows = numpy.zeros((self.N + 1, 2))
         for i in range(self.N + 1):
             if i != 0:
-                time_windows[i, 0] = numpy.random.randint(max(math.floor(time_matrix[0, i]), 0), 17)
-                tw_width = numpy.random.randint(1, 3)
+                time_windows[i, 0] = numpy.random.randint(max(math.floor(time_matrix[0, i]), 0), 11)
+                tw_width = numpy.random.randint(2, 9)
                 time_windows[i, 1] = time_windows[i, 0] + tw_width
 
         time_windows[0, 1] = 18

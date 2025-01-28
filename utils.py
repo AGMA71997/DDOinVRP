@@ -43,10 +43,9 @@ def result_analyzer(method, base, num_customers, scaler=None):
     Gaps = []
     for index, instance_dict in enumerate(performance_dicts):
         baseline_dict = baseline[index]
-
-        print(instance_dict)
-        print(baseline_dict)
-        print("--------------------")
+        #print(instance_dict)
+        #print(baseline_dict)
+        #print("---------------------------")
 
         Gaps.append((instance_dict["Final"][0] - baseline_dict["Final"][0]) * 100 / baseline_dict["Final"][0])
         for key in instance_dict:
@@ -75,8 +74,6 @@ def result_analyzer(method, base, num_customers, scaler=None):
             else:
                 unmatched += 1
                 continue
-                # factor = (baseline_dict['Final'][0] - instance_dict['Final'][0]) / instance_dict['Final'][0]
-                # stoppage = 3600  # baseline_dict['Final'][1] * math.exp(factor)
         else:
             DP_catch_up.append(stoppage / instance_dict['Final'][1])
 
@@ -304,12 +301,12 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 
 
 def main():
-    method = 'DP'
-    num_customers = 200
-    scaler = "ULGR 10"
-    base = 'with AR'
+    method = 'RL'
+    num_customers = 50
+    scaler = "scaler2 Nby2"
+    base = ''
 
-    # result_analyzer(method, base, num_customers, scaler)
+    result_analyzer(method, base, num_customers, scaler)
 
 
 if __name__ == "__main__":

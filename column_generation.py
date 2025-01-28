@@ -97,7 +97,8 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
                     ordered_route = []
                     reduced_cost = 0
             else:
-                ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red, policy=policy)
+                ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red, policy=policy,
+                                                                                     max_threads=50)
         else:
             ordered_route, reduced_cost, top_labels = subproblem.solve()
         time_22 = time.time()
@@ -137,10 +138,9 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
                 master_problem.add_columns([route], [cost], [label], forbidden_edges, compelled_edges)
                 added_orders.append(label)
         elif arc_red:
-            print("HERE")
-            break
+            print("Arc red mode to be changed.")
+            # break
             arc_red = False
-            print("changed arc red mode.")
         else:
             # Optimality has been reached
             reoptimize = False
@@ -655,8 +655,8 @@ class Subproblem:
         self.primal_bound = 0
         self.primal_label = []
 
-        self.determine_PULSE_bounds(2, 0.5 * self.time_windows[0, 1])
-        # print("Bounds Computed")
+        self.determine_PULSE_bounds(0.5, 0.75 * self.time_windows[0, 1])
+        print("Bounds Computed")
 
         threads = []
         best_routes = []
@@ -664,7 +664,7 @@ class Subproblem:
         self.primal_bound = min(numpy.min(self.bounds), 0)
         for cus in self.price_arrangement[0]:
             start_point = cus
-            if (0, cus) not in self.forbidden_edges and self.price[0, cus] != math.inf:
+            if cus != 0 and (0, cus) not in self.forbidden_edges and self.price[0, cus] != math.inf:
                 current_label = [0, cus]
                 remaining_capacity = self.vehicle_capacity - self.demands[cus]
                 current_time = self.time_matrix[0, cus]
@@ -715,7 +715,7 @@ def main():
     random.seed(10)
     np.random.seed(10)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_customers', type=int, default=200)
+    parser.add_argument('--num_customers', type=int, default=100)
     parser.add_argument('--policy', type=str, default='DP')
     parser.add_argument('--AR', type=bool, default=True)
     args = parser.parse_args()
@@ -732,11 +732,16 @@ def main():
 
     results = []
     performance_dicts = []
-    for experiment in range(50):
-        # instance = config["Solomon Test Dataset"] + "/RC208.txt"
-        # print("The following instance is used: " + instance)
-        VRP_instance = Instance_Generator(N=num_customers)
-        # VRP_instance = Instance_Generator(file_path=instance, config=config)
+    directory = config["Solomon Test Dataset"]
+    for instance in os.listdir(directory):
+    # for experiment in range(50):
+        #file = directory + "/" + instance
+        file = directory + "/" + "C206.txt"
+        print(file)
+
+        # VRP_instance = Instance_Generator(N=num_customers)
+        VRP_instance = Instance_Generator(file_path=file, config=config)
+
         print("This instance has " + str(num_customers) + " customers.")
         forbidden_edges = []
         compelled_edges = []

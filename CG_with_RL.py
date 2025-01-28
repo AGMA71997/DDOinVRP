@@ -198,7 +198,7 @@ def main():
     random.seed(10)
     np.random.seed(10)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_customers', type=int, default=1000)
+    parser.add_argument('--num_customers', type=int, default=800)
     example_path = 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/model100_scaler1_Nby2'
     parser.add_argument('--model_path', type=str, default=example_path)
     parser.add_argument('--epoch', type=int, default=200)
@@ -222,6 +222,7 @@ def main():
         # file = directory + "/" + "C206.txt"
         # print(file)
 
+        # VRP_instance = Instance_Generator(file_path=file, config=config)
         VRP_instance = Instance_Generator(N=num_customers)
         forbidden_edges = []
         compelled_edges = []
