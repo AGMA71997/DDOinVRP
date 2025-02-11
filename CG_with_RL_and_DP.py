@@ -144,6 +144,7 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
 
                 master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
                 added_orders.append(ordered_route)
+            DP_used = False
         elif not DP_used:
             DP_used = True
             print("Changed to DP mode.")

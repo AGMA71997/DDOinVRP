@@ -15,7 +15,6 @@ import json
 
 import matplotlib.pyplot as pp
 from graph_reduction import Node_Reduction, Arc_Reduction
-from ESPPRC_heuristic import DSSR_ESPPRC, ESPPRC
 
 
 def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled_edges, initial_routes,
@@ -82,24 +81,14 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
 
         N = len(red_cor) - 1
         time_11 = time.time()
-        subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
-                                red_duals, red_sts, forbidden_edges)
         if heuristic:
-            if policy == "DSSR":
-                subproblem = DSSR_ESPPRC(vehicle_capacity, red_dem, red_tws, red_sts, N,
-                                         red_tms, red_prices)
-                top_labels = subproblem.solve()
-                if len(top_labels) > 0:
-                    ordered_route = top_labels[0].path()
-                    reduced_cost = top_labels[0].cost
-                    del top_labels[0]
-                else:
-                    ordered_route = []
-                    reduced_cost = 0
-            else:
+                subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
+                                        red_duals, red_sts, forbidden_edges, red_prices)
                 ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red, policy=policy,
-                                                                                     max_threads=50)
+                                                                                     max_threads=N)
         else:
+            subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
+                                    red_duals, red_sts, forbidden_edges, red_prices)
             ordered_route, reduced_cost, top_labels = subproblem.solve()
         time_22 = time.time()
         # subproblem.render_solution(ordered_route)
@@ -128,10 +117,7 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
             master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
             added_orders.append(ordered_route)
             for x in range(len(top_labels)):
-                if policy == "DSSR":
-                    label = top_labels[x].path()
-                else:
-                    label = top_labels[x]
+                label = top_labels[x]
                 label = remap_route(label, cus_mapping)
                 cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
                 route = convert_ordered_route(label, num_customers)
@@ -422,7 +408,6 @@ class Subproblem:
 
     def DP_heuristic(self, start_point, current_label, remaining_capacity, current_time,
                      current_price, best_bound, start_time, thread_time_limit=3, price_lb=-0.1):
-
         if start_time is None:
             start_time = time.time()
 
@@ -434,7 +419,9 @@ class Subproblem:
             if self.thread_count == self.max_threads:
                 self.terminate = True
 
-        if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0 or terminate:
+        if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0 or terminate \
+                or (current_price > 0 and current_time / self.time_windows[0, 1] > 0.75) or \
+                (current_price > 0 and remaining_capacity/self.vehicle_capacity < 0.25):
             return [], math.inf, terminate
 
         if start_point == 0 and len(current_label) > 1:
@@ -486,7 +473,8 @@ class Subproblem:
                         CT = math.inf
 
                 label, lower_bound, terminate = self.DP_heuristic(j, copy_label, RC, CT, CP,
-                                                                  best_bound, start_time)
+                                                                  best_bound, start_time, thread_time_limit,
+                                                                  price_lb)
 
                 if lower_bound < best_bound:
                     best_bound = lower_bound
@@ -593,7 +581,7 @@ class Subproblem:
                     current_price = self.price[0, cus]
                     if policy == "DP":
                         best_bound = 0
-                        TTL = 3
+                        TTL = 30
                         PLB = -0.1
                     else:
                         best_bound = 0  # math.inf
@@ -715,7 +703,7 @@ def main():
     random.seed(10)
     np.random.seed(10)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_customers', type=int, default=100)
+    parser.add_argument('--num_customers', type=int, default=50)
     parser.add_argument('--policy', type=str, default='DP')
     parser.add_argument('--AR', type=bool, default=True)
     args = parser.parse_args()
@@ -732,15 +720,15 @@ def main():
 
     results = []
     performance_dicts = []
-    directory = config["Solomon Test Dataset"]
-    for instance in os.listdir(directory):
-    # for experiment in range(50):
+    #directory = config["Solomon Test Dataset"]
+    #for instance in os.listdir(directory):
+    for experiment in range(50):
         #file = directory + "/" + instance
-        file = directory + "/" + "C206.txt"
-        print(file)
+        #file = directory + "/" + "C206.txt"
+        #print(file)
 
-        # VRP_instance = Instance_Generator(N=num_customers)
-        VRP_instance = Instance_Generator(file_path=file, config=config)
+        VRP_instance = Instance_Generator(N=num_customers)
+        # VRP_instance = Instance_Generator(file_path=file, config=config)
 
         print("This instance has " + str(num_customers) + " customers.")
         forbidden_edges = []
@@ -755,7 +743,7 @@ def main():
                                                                                             initial_routes,
                                                                                             initial_costs,
                                                                                             initial_orders,
-                                                                                            policy,arc_red)
+                                                                                            policy, arc_red)
 
         print("solution: " + str(sol))
         print("objective: " + str(obj))
@@ -769,13 +757,12 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pickle_out = open('DP Results N=' + str(num_customers)+' '+str(arc_red), 'wb')
+    pickle_out = open('DP Results N=' + str(num_customers) + ' ' + str(arc_red)+' New Instances', 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 
 
 if __name__ == "__main__":
     import cProfile
-
     # cProfile.run('main()')
     main()

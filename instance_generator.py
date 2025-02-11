@@ -15,7 +15,7 @@ class Instance_Generator(object):
             self.coords = None
             self.time_matrix = self.create_time_matrix()
             self.time_windows = self.create_time_windows(self.time_matrix)
-            VC_map = {20: 30, 30: 30, 40: 30, 50: 40, 100: 50, 200: 50, 500: 50, 800: 150, 1000: 80}
+            VC_map = {20: 30, 30: 30, 40: 30, 50: 40, 100: 50, 200: 80, 400: 100, 500: 50, 600: 120, 800: 150, 1000: 80}
             self.vehicle_capacity = VC_map[self.N]
             self.demands = self.create_demands()
             self.service_times = self.create_service_times()
@@ -79,9 +79,9 @@ class Instance_Generator(object):
         time_windows = numpy.zeros((self.N + 1, 2))
         for i in range(self.N + 1):
             if i != 0:
-                time_windows[i, 0] = numpy.random.randint(max(math.floor(time_matrix[0, i]), 0), 11)
+                time_windows[i, 0] = numpy.random.randint(max(math.floor(time_matrix[0, i]), 0), 17)
                 tw_width = numpy.random.randint(2, 9)
-                time_windows[i, 1] = time_windows[i, 0] + tw_width
+                time_windows[i, 1] = min(time_windows[i, 0] + tw_width, 18)
 
         time_windows[0, 1] = 18
 

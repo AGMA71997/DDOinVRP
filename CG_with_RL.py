@@ -59,13 +59,18 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
 
     # Iterate until optimality is reached
     max_iter = 5000
+    max_time = 60 * 60
     iteration = 0
     cum_time = 0
     results_dict = {}
     start_time = time.time()
     dual_plot = []
-    changed = False
     while iteration < max_iter:
+
+        if time.time() - start_time > max_time:
+            print("Time Limit Reached")
+            break
+
         master_problem.solve()
         duals = master_problem.retain_duals()
         dual_plot += [x for x in duals if x > 0]
@@ -198,7 +203,7 @@ def main():
     random.seed(10)
     np.random.seed(10)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_customers', type=int, default=800)
+    parser.add_argument('--num_customers', type=int, default=100)
     example_path = 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/model100_scaler1_Nby2'
     parser.add_argument('--model_path', type=str, default=example_path)
     parser.add_argument('--epoch', type=int, default=200)
@@ -217,7 +222,7 @@ def main():
     red_costs = []
     # directory = config["Solomon Test Dataset"]
     # for instance in os.listdir(directory):
-    for experiment in range(10):
+    for experiment in range(50):
         # file = directory + "/" + instance
         # file = directory + "/" + "C206.txt"
         # print(file)
@@ -266,7 +271,7 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pickle_out = open('RL Results N=' + str(num_customers), 'wb')
+    pickle_out = open('RL Results N=' + str(num_customers) + " New Instances", 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 
