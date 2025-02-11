@@ -58,6 +58,7 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     model.load_state_dict(checkpoint['model_state_dict'])
 
     # Iterate until optimality is reached
+    reoptimize = True
     max_iter = 5000
     max_time = 60 * 60
     iteration = 0
@@ -125,10 +126,13 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
                 added_orders.append(ordered_route)
             # SEE code_blocks.py
         else:
+            reoptimize = False
             # Optimality has been reached
             print("No columns with negative reduced cost found.")
             break
 
+    if reoptimize:
+        master_problem.solve()
     sol, obj = master_problem.extract_solution()
     results_dict["Final"] = (obj, time.time() - start_time)
     routes, costs, orders = master_problem.extract_columns()
@@ -136,6 +140,7 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     print("Average duals: " + str(statistics.mean(dual_plot)))
     # print("Std. Dev. of duals: "+str(statistics.stdev(dual_plot)))
     # pp.show()
+    master_problem.__delete__()
     return sol, obj, routes, costs, orders, results_dict
 
 
