@@ -85,7 +85,7 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
                                     red_duals, red_sts, forbidden_edges, red_prices)
             ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red, policy=policy,
-                                                                                 max_threads=N)
+                                                                                 max_threads=100)
         else:
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
                                     red_duals, red_sts, forbidden_edges, red_prices)
