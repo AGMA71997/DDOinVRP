@@ -82,10 +82,10 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
         N = len(red_cor) - 1
         time_11 = time.time()
         if heuristic:
-                subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
-                                        red_duals, red_sts, forbidden_edges, red_prices)
-                ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red, policy=policy,
-                                                                                     max_threads=N)
+            subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
+                                    red_duals, red_sts, forbidden_edges, red_prices)
+            ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red, policy=policy,
+                                                                                 max_threads=N)
         else:
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
                                     red_duals, red_sts, forbidden_edges, red_prices)
@@ -421,7 +421,7 @@ class Subproblem:
 
         if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0 or terminate \
                 or (current_price > 0 and current_time / self.time_windows[0, 1] > 0.75) or \
-                (current_price > 0 and remaining_capacity/self.vehicle_capacity < 0.25):
+                (current_price > 0 and remaining_capacity / self.vehicle_capacity < 0.25):
             return [], math.inf, terminate
 
         if start_point == 0 and len(current_label) > 1:
@@ -533,13 +533,20 @@ class Subproblem:
 
         return new_path_list
 
-    def h_ls(self, current_path, dist, k_opt_iter):
+    def h_ls(self, dist, k_opt_iter, start_point, current_label, remaining_capacity, current_time,
+             current_price, best_bound, start_time, TTL, PLB):
         """Local search algorithm H_ls for RCESPP."""
-        current_cost = sum([self.price[current_path[x], current_path[x + 1]]
-                            for x in range(len(current_path) - 1)])
+        current_path, current_cost, terminate = self.DP_heuristic(start_point, current_label,
+                                                                  remaining_capacity, current_time,
+                                                                  current_price, best_bound,
+                                                                  start_time, TTL, PLB)
+        init_cost = current_cost
+
+        if not current_path or self.k_ex_count >= self.max_columns:
+            return [], 0
 
         for k in range(k_opt_iter):
-            neighbors = self.k_exchange(current_path, dist)  # self.generate_neighbors(current_path)
+            neighbors = self.k_exchange(current_path, dist)
 
             for neighbor in neighbors:
                 if check_route_feasibility(neighbor, self.time_matrix, self.time_windows,
@@ -547,10 +554,15 @@ class Subproblem:
                     neighbor_cost = sum(
                         [self.price[neighbor[x], neighbor[x + 1]] for x in range(len(neighbor) - 1)])
                     if neighbor_cost < current_cost:
-                        # print("Improvement Found")
                         current_path = neighbor
                         current_cost = neighbor_cost
 
+        if current_cost < PLB:
+            self.k_ex_count += 1
+            if PLB < init_cost:
+                self.col_count += 1
+                if self.col_count == self.max_columns:
+                    self.terminate = True
         return current_path, current_cost
 
     def solve_heuristic(self, arc_red=False, policy="DP", max_columns=20, max_threads=None,
@@ -579,49 +591,41 @@ class Subproblem:
                     remaining_capacity = self.vehicle_capacity - self.demands[cus]
                     current_time = self.time_matrix[0, cus]
                     current_price = self.price[0, cus]
-                    if policy == "DP":
-                        best_bound = 0
-                        TTL = 30
-                        PLB = -0.1
-                    else:
-                        best_bound = 0.5  # math.inf
-                        TTL = 2 ###############
-                        PLB = -0.1
+                    best_bound = 0.5  # math.inf
+                    TTL = 2
+                    PLB = -0.1
                     start_time = None
-                    thread = Bound_Threader(target=self.DP_heuristic, args=(start_point, current_label,
-                                                                            remaining_capacity,
-                                                                            current_time, current_price,
-                                                                            best_bound, start_time, TTL,
-                                                                            PLB))
+                    if policy == "DP":
+                        thread = Bound_Threader(target=self.DP_heuristic, args=(start_point, current_label,
+                                                                                remaining_capacity,
+                                                                                current_time, current_price,
+                                                                                best_bound, start_time, TTL,
+                                                                                PLB))
+                    else:
+                        dist = dist + torch.transpose(dist, 0, 1)
+                        row_sums = dist.sum(axis=1, keepdims=True)
+                        row_sums[row_sums == 0] = 1
+                        dist = dist / row_sums
+                        dist = torch.cumsum(dist, dim=1)
+
+                        self.k_ex_count = 0
+
+                        thread = Bound_Threader(target=self.h_ls, args=(dist, k_opt_iter, start_point,
+                                                                        current_label, remaining_capacity,
+                                                                        current_time, current_price,
+                                                                        best_bound, start_time, TTL,
+                                                                        PLB))
+
                     thread.start()
                     threads.append(thread)
 
             for index, thread in enumerate(threads):
-                label, cost, terminate = thread.join()
+                if policy == "DP":
+                    label, cost, terminate = thread.join()
+                else:
+                    label, cost = thread.join()
                 best_routes.append(label)
                 best_costs.append(cost)
-
-            if policy == "k-opt":
-                dist = dist + torch.transpose(dist, 0, 1)
-                row_sums = dist.sum(axis=1, keepdims=True)
-                row_sums[row_sums == 0] = 1
-                dist = dist / row_sums
-                dist = torch.cumsum(dist, dim=1)
-
-                threads = []
-                best_costs = []
-
-                for label in best_routes:
-                    if label:
-                        thread = Bound_Threader(target=self.h_ls, args=(label, dist, k_opt_iter))
-                        thread.start()
-                        threads.append(thread)
-
-                best_routes = []
-                for index, thread in enumerate(threads):
-                    new_label, cost = thread.join()
-                    best_routes.append(new_label)
-                    best_costs.append(cost)
 
             if len(best_costs) > 0:
                 price = min(best_costs)
@@ -720,12 +724,12 @@ def main():
 
     results = []
     performance_dicts = []
-    #directory = config["Solomon Test Dataset"]
-    #for instance in os.listdir(directory):
+    # directory = config["Solomon Test Dataset"]
+    # for instance in os.listdir(directory):
     for experiment in range(10):
-        #file = directory + "/" + instance
-        #file = directory + "/" + "C206.txt"
-        #print(file)
+        # file = directory + "/" + instance
+        # file = directory + "/" + "C206.txt"
+        # print(file)
 
         VRP_instance = Instance_Generator(N=num_customers)
         # VRP_instance = Instance_Generator(file_path=file, config=config)
@@ -757,12 +761,13 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pickle_out = open('DP Results N=' + str(num_customers) + ' ' + str(arc_red)+' Large Scale Instances', 'wb')
+    pickle_out = open('DP Results N=' + str(num_customers) + ' ' + str(arc_red) + ' Large Scale Instances', 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 
 
 if __name__ == "__main__":
     import cProfile
+
     # cProfile.run('main()')
     main()

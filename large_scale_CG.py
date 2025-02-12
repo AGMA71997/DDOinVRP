@@ -139,8 +139,8 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
         N = len(red_cor) - 1
         subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
                                 red_duals, red_sts, forbidden_edges, red_prices2)
-        ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(policy="k-opt",dist=red_dist,
-                                                                             k_opt_iter=20)
+        ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(policy="k-opt", dist=red_dist,
+                                                                             k_opt_iter=20, max_threads=100)
         # red_costs.append(best_reward)
         # break
 
