@@ -118,6 +118,11 @@ def result_analyzer(method, base, num_customers, scaler=None):
     pp.title("Convergence plot")
     pp.show()
 
+    pp.hist(Gaps)
+    pp.xlabel("Percentage Gaps")
+    pp.ylabel("Frequency")
+    pp.show()
+
 
 def create_price(time_matrix, duals):
     if len(duals) < len(time_matrix):
@@ -302,9 +307,9 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 
 def main():
     method = 'RL'
-    num_customers = 50
-    scaler = "scaler2 Nby2"
-    base = ''
+    num_customers = 100
+    scaler = "New"
+    base = 'True Old Heuristic Config'
 
     result_analyzer(method, base, num_customers, scaler)
 

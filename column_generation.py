@@ -125,8 +125,8 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
                 added_orders.append(label)
         elif arc_red:
             print("Arc red mode to be changed.")
-            # break
-            arc_red = False
+            break
+            # arc_red = False
         else:
             # Optimality has been reached
             reoptimize = False
@@ -584,8 +584,8 @@ class Subproblem:
                         TTL = 30
                         PLB = -0.1
                     else:
-                        best_bound = 0  # math.inf
-                        TTL = 2
+                        best_bound = 0.5  # math.inf
+                        TTL = 2 ###############
                         PLB = -0.1
                     start_time = None
                     thread = Bound_Threader(target=self.DP_heuristic, args=(start_point, current_label,
@@ -703,7 +703,7 @@ def main():
     random.seed(10)
     np.random.seed(10)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_customers', type=int, default=50)
+    parser.add_argument('--num_customers', type=int, default=200)
     parser.add_argument('--policy', type=str, default='DP')
     parser.add_argument('--AR', type=bool, default=True)
     args = parser.parse_args()
@@ -722,7 +722,7 @@ def main():
     performance_dicts = []
     #directory = config["Solomon Test Dataset"]
     #for instance in os.listdir(directory):
-    for experiment in range(50):
+    for experiment in range(10):
         #file = directory + "/" + instance
         #file = directory + "/" + "C206.txt"
         #print(file)
@@ -757,7 +757,7 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pickle_out = open('DP Results N=' + str(num_customers) + ' ' + str(arc_red)+' New Instances', 'wb')
+    pickle_out = open('DP Results N=' + str(num_customers) + ' ' + str(arc_red)+' Large Scale Instances', 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 

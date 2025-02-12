@@ -4,7 +4,6 @@ import numpy
 
 from instance_generator import Instance_Generator
 from column_generation import MasterProblem
-from ESPRCTWProblemDef import get_random_problems
 import time
 from utils import *
 
@@ -29,7 +28,7 @@ from graph_reduction import Arc_Reduction
 
 def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled_edges,
                                            initial_routes, initial_costs, initial_orders, model_path,
-                                           red_param, heuristic, red_costs):
+                                           red_param, red_costs):
     coords = VRP_instance.coords
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows
@@ -91,10 +90,8 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     cum_time = 0
     results_dict = {}
     start_time = time.time()
-    arc_red = False
     reoptimize = True
     max_time = 60 * 60
-
     while iteration < max_iter:
 
         if time.time() - start_time > max_time:
@@ -140,26 +137,10 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
             reshape_problem(red_cor, demands, time_windows, duals, service_times, time_matrix, prices, dist)
 
         N = len(red_cor) - 1
-        # red_prices2[np.isnan(red_prices2)] = math.inf
-        if heuristic == "DSSR":
-            subproblem = DSSR_ESPPRC(vehicle_capacity, red_dem, red_tws, red_sts, N,
-                                     red_tms, red_prices2)
-            top_labels = subproblem.solve()
-            if len(top_labels) > 0:
-                ordered_route = top_labels[0].path()
-                reduced_cost = top_labels[0].cost
-                del top_labels[0]
-            else:
-                ordered_route = []
-                reduced_cost = 0
-        elif heuristic == "DP" or heuristic == "k-opt":
-            subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
-                                    red_duals, red_sts, forbidden_edges, red_prices2)
-            ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red, policy=heuristic,
-                                                                                 dist=red_dist, k_opt_iter=20)
-        else:
-            print("Not Implemented")
-            sys.exit(0)
+        subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
+                                red_duals, red_sts, forbidden_edges, red_prices2)
+        ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(policy="k-opt",dist=red_dist,
+                                                                             k_opt_iter=20)
         # red_costs.append(best_reward)
         # break
 
@@ -187,18 +168,12 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
             master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
             added_orders.append(ordered_route)
             for x in range(len(top_labels)):
-                if heuristic == "DSSR":
-                    label = top_labels[x].path()
-                else:
-                    label = top_labels[x]
+                label = top_labels[x]
                 label = remap_route(label, cus_mapping)
                 cost = sum(time_matrix[label[i], label[i + 1]] for i in range(len(label) - 1))
                 route = convert_ordered_route(label, num_customers)
                 master_problem.add_columns([route], [cost], [label], forbidden_edges, compelled_edges)
                 added_orders.append(label)
-        elif arc_red and heuristic == "DP":
-            arc_red = False
-            print("Changed arc red mode.")
         else:
             # Optimality has been reached
             reoptimize = False
@@ -222,13 +197,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_customers', type=int, default=200)
     parser.add_argument('--red_param', type=float, default=10)
-    parser.add_argument('--heuristic', type=str, default="k-opt")
     example_path = 'C:/Users/abdug/Python/UL4CG/PP/Saved_Models/PP_200/scatgnn_layer_2_hid_64_model_300_temp_3.500.pth'
     parser.add_argument('--model_path', type=str, default=example_path)
     args = parser.parse_args()
     num_customers = args.num_customers
     red_param = args.red_param
-    heuristic = args.heuristic
 
     model_path = args.model_path
 
@@ -239,7 +212,7 @@ def main():
     results = []
     performance_dicts = []
     red_costs = []
-    for experiment in range(50):
+    for experiment in range(10):
         VRP_instance = Instance_Generator(N=num_customers)
         forbidden_edges = []
         compelled_edges = []
@@ -255,7 +228,6 @@ def main():
                                                                                                initial_orders,
                                                                                                model_path,
                                                                                                red_param,
-                                                                                               heuristic,
                                                                                                red_costs)
 
         print("solution: " + str(sol))
@@ -270,7 +242,7 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pickle_out = open('DP Results N=' + str(num_customers) + ' ULGR ' + str(red_param), 'wb')
+    pickle_out = open('K-Opt Results N=' + str(num_customers) + ' ULGR ' + str(red_param), 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 
