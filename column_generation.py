@@ -591,11 +591,11 @@ class Subproblem:
                     remaining_capacity = self.vehicle_capacity - self.demands[cus]
                     current_time = self.time_matrix[0, cus]
                     current_price = self.price[0, cus]
-                    best_bound = 0.5  # math.inf
-                    TTL = 2
-                    PLB = -0.1
                     start_time = None
                     if policy == "DP":
+                        best_bound = 0 # math.inf
+                        TTL = 30
+                        PLB = -1
                         thread = Bound_Threader(target=self.DP_heuristic, args=(start_point, current_label,
                                                                                 remaining_capacity,
                                                                                 current_time, current_price,
@@ -609,7 +609,9 @@ class Subproblem:
                         dist = torch.cumsum(dist, dim=1)
 
                         self.k_ex_count = 0
-
+                        best_bound = 0.5
+                        TTL = 5
+                        PLB = -1
                         thread = Bound_Threader(target=self.h_ls, args=(dist, k_opt_iter, start_point,
                                                                         current_label, remaining_capacity,
                                                                         current_time, current_price,
