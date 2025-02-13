@@ -126,10 +126,7 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
 
         point_wise_distance = torch.matmul(output, torch.roll(torch.transpose(output, 1, 2), -1, 1))[0]
         AR = Arc_Reduction(prices, duals)
-        if red_param < 1:
-            red_prices, dist = AR.ml_arc_reduction(point_wise_distance, threshold=red_param, price_adj_mat=price_adj)
-        else:
-            red_prices, dist = AR.ml_arc_reduction(point_wise_distance, m=red_param, price_adj_mat=price_adj)
+        red_prices, dist = AR.ml_arc_reduction(point_wise_distance, m=red_param, price_adj_mat=price_adj)
 
         NR = Node_Reduction(coords, duals)
         red_cor = NR.dual_based_elimination()
@@ -196,7 +193,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_customers', type=int, default=200)
-    parser.add_argument('--red_param', type=float, default=10)
+    parser.add_argument('--red_param', type=int, default=10)
     example_path = 'C:/Users/abdug/Python/UL4CG/PP/Saved_Models/PP_200/scatgnn_layer_2_hid_64_model_300_temp_3.500.pth'
     parser.add_argument('--model_path', type=str, default=example_path)
     args = parser.parse_args()
@@ -208,6 +205,9 @@ def main():
     file = "config.json"
     with open(file, 'r') as f:
         config = json.load(f)
+
+    print("Unsupervised Learning Module Used")
+    print("Instances of size: "+str(num_customers))
 
     results = []
     performance_dicts = []

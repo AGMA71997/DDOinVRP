@@ -533,17 +533,10 @@ class Subproblem:
 
         return new_path_list
 
-    def h_ls(self, dist, k_opt_iter, start_point, current_label, remaining_capacity, current_time,
-             current_price, best_bound, start_time, TTL, PLB):
+    def h_ls(self, current_path, dist, k_opt_iter):
         """Local search algorithm H_ls for RCESPP."""
-        current_path, current_cost, terminate = self.DP_heuristic(start_point, current_label,
-                                                                  remaining_capacity, current_time,
-                                                                  current_price, best_bound,
-                                                                  start_time, TTL, PLB)
-        init_cost = current_cost
-
-        if not current_path or self.k_ex_count >= self.max_columns:
-            return [], 0
+        current_cost = sum([self.price[current_path[x], current_path[x + 1]]
+                            for x in range(len(current_path) - 1)])
 
         for k in range(k_opt_iter):
             neighbors = self.k_exchange(current_path, dist)
@@ -557,12 +550,6 @@ class Subproblem:
                         current_path = neighbor
                         current_cost = neighbor_cost
 
-        if current_cost < PLB:
-            self.k_ex_count += 1
-            if PLB < init_cost:
-                self.col_count += 1
-                if self.col_count == self.max_columns:
-                    self.terminate = True
         return current_path, current_cost
 
     def solve_heuristic(self, arc_red=False, policy="DP", max_columns=20, max_threads=None,
@@ -593,41 +580,46 @@ class Subproblem:
                     current_price = self.price[0, cus]
                     start_time = None
                     if policy == "DP":
-                        best_bound = 0 # math.inf
+                        best_bound = 0
                         TTL = 30
                         PLB = -1
-                        thread = Bound_Threader(target=self.DP_heuristic, args=(start_point, current_label,
-                                                                                remaining_capacity,
-                                                                                current_time, current_price,
-                                                                                best_bound, start_time, TTL,
-                                                                                PLB))
                     else:
-                        dist = dist + torch.transpose(dist, 0, 1)
-                        row_sums = dist.sum(axis=1, keepdims=True)
-                        row_sums[row_sums == 0] = 1
-                        dist = dist / row_sums
-                        dist = torch.cumsum(dist, dim=1)
-
-                        self.k_ex_count = 0
-                        best_bound = 0.5
+                        best_bound = 0.5  # math.inf
                         TTL = 5
-                        PLB = -1
-                        thread = Bound_Threader(target=self.h_ls, args=(dist, k_opt_iter, start_point,
-                                                                        current_label, remaining_capacity,
-                                                                        current_time, current_price,
-                                                                        best_bound, start_time, TTL,
-                                                                        PLB))
-
+                        PLB = -0.1
+                    thread = Bound_Threader(target=self.DP_heuristic, args=(start_point, current_label,
+                                                                            remaining_capacity,
+                                                                            current_time, current_price,
+                                                                            best_bound, start_time, TTL,
+                                                                            PLB))
                     thread.start()
                     threads.append(thread)
 
             for index, thread in enumerate(threads):
-                if policy == "DP":
-                    label, cost, terminate = thread.join()
-                else:
-                    label, cost = thread.join()
+                label, cost, terminate = thread.join()
                 best_routes.append(label)
                 best_costs.append(cost)
+
+            if policy == "k-opt":
+                dist = dist + torch.transpose(dist, 0, 1)
+                row_sums = dist.sum(axis=1, keepdims=True)
+                row_sums[row_sums == 0] = 1
+                dist = dist / row_sums
+                dist = torch.cumsum(dist, dim=1)
+
+                threads = []
+                best_costs = []
+                for label in best_routes:
+                    if label:
+                        thread = Bound_Threader(target=self.h_ls, args=(label, dist, k_opt_iter))
+                        thread.start()
+                        threads.append(thread)
+
+                best_routes = []
+                for index, thread in enumerate(threads):
+                    new_label, cost = thread.join()
+                    best_routes.append(new_label)
+                    best_costs.append(cost)
 
             if len(best_costs) > 0:
                 price = min(best_costs)
@@ -711,7 +703,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_customers', type=int, default=200)
     parser.add_argument('--policy', type=str, default='DP')
-    parser.add_argument('--AR', type=bool, default=True)
+    parser.add_argument('--AR', type=bool, default=False)
     args = parser.parse_args()
     num_customers = args.num_customers
     policy = args.policy
@@ -763,7 +755,7 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pickle_out = open('DP Results N=' + str(num_customers) + ' ' + str(arc_red) + ' Large Scale Instances', 'wb')
+    pickle_out = open(policy + ' Results N=' + str(num_customers) + ' ' + str(arc_red) + ' Large Scale Instances', 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 

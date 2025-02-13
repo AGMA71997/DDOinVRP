@@ -91,28 +91,23 @@ class Arc_Reduction(object):
 
         return prices
 
-    def ml_arc_reduction(self, dist, m=None, threshold=None, price_adj_mat=None):
+    def ml_arc_reduction(self, dist, m=None, price_adj_mat=None):
         prices = numpy.zeros(self.prices.shape) + numpy.nan
         dist_copy = torch.zeros(dist.shape)
-        if threshold is not None:
-            prices[dist >= threshold] = self.prices[dist >= threshold]
-        else:
-            total_rows = dist.shape[1]
-            for row_idx in range(total_rows):
-                # Extract the column
-                row = dist[row_idx, :]
+        total_rows = dist.shape[1]
+        for row_idx in range(total_rows):
+            # Extract the column
+            row = dist[row_idx, :]
 
-                # Find the indices of the k smallest elements
-                largest_indices = torch.topk(row, m, largest=True).indices
-                # largest_values = row[largest_indices]
+            # Find the indices of the k largest elements
+            largest_indices = torch.topk(row, m, largest=True).indices
+            # largest_values = row[largest_indices]
 
-                # Extract the k smallest elements
-                prices[row_idx, largest_indices] = self.prices[row_idx, largest_indices]
-                dist_copy[row_idx, largest_indices] = dist[row_idx, largest_indices]
-                # selected_price_adj = price_adj_mat[largest_indices, col_idx]
-                # selected_price_adj = torch.sort(selected_price_adj)[0]]
-                # if row_idx == 0:
-                # print((row_idx, largest_values.tolist(), largest_indices.tolist()))
+            # Extract the k largest elements
+            prices[row_idx, largest_indices] = self.prices[row_idx, largest_indices]
+            dist_copy[row_idx, largest_indices] = dist[row_idx, largest_indices]
+            # selected_price_adj = price_adj_mat[largest_indices, col_idx]
+            # selected_price_adj = torch.sort(selected_price_adj)[0]]
 
         prices[0, :] = self.prices[0, :]
         prices[:, 0] = self.prices[:, 0]
