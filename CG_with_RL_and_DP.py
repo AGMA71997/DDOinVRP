@@ -62,14 +62,14 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     # Iterate until optimality is reached
     reoptimize = True
     max_iter = 5000
-    max_time = 60 * 60
+    max_time = 3 * 60
     iteration = 0
     cum_time = 0
     results_dict = {}
     start_time = time.time()
     dual_plot = []
-    DP_used = False
     while iteration < max_iter:
+        DP_used = False
 
         if time.time() - start_time > max_time:
             print("Time Limit Reached")
@@ -80,27 +80,28 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
         dual_plot += [x for x in duals if x > 0]
 
         prices = create_price(time_matrix, duals)
-        if not DP_used:
-            env_params = {'problem_size': num_customers,
-                          'pomo_size': num_customers}
-            env = Env(**env_params)
-            time_1 = time.time()
-            env.declare_problem(coords, demands, time_windows,
-                                duals, service_times, time_matrix, prices, vehicle_capacity, 1, True)
+        env_params = {'problem_size': num_customers,
+                      'pomo_size': num_customers}
+        env = Env(**env_params)
+        time_1 = time.time()
+        env.declare_problem(coords, demands, time_windows,
+                            duals, service_times, time_matrix, prices, vehicle_capacity, 1, True)
 
-            pp_rl_solver = ESPRCTW_RL_solver(env, model, prices)
-            ordered_routes, best_route, best_reward = pp_rl_solver.generate_columns()
-            time_2 = time.time()
+        pp_rl_solver = ESPRCTW_RL_solver(env, model, prices)
+        ordered_routes, best_route, best_reward = pp_rl_solver.generate_columns()
+        time_2 = time.time()
 
+        if best_reward < -0.001:
             for ordered_route in ordered_routes:
                 while ordered_route[-1] == ordered_route[-2]:
                     ordered_route.pop()
 
             while best_route[-1] == best_route[-2]:
                 best_route.pop()
-
-
         else:
+            print("Changed to DP mode.")
+            DP_used = True
+
             prices = prices * -1
             NR = Node_Reduction(coords, duals)
             red_cor = NR.dual_based_elimination()
@@ -113,7 +114,6 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
                                                                                                               prices)
 
             N = len(red_cor) - 1
-            time_1 = time.time()
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
                                     red_duals, red_sts, forbidden_edges, red_prices)
             best_route, best_reward, ordered_routes = subproblem.solve_heuristic(arc_red=False, policy="DP",
@@ -121,6 +121,8 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
             time_2 = time.time()
 
             best_route = remap_route(best_route, cus_mapping)
+            cost_opt = sum(time_matrix[best_route[i], best_route[i + 1]] for i in range(len(best_route) - 1))
+            route_opt = convert_ordered_route(best_route, num_customers)
 
         iteration += 1
         obj_val = master_problem.model.objval
@@ -134,21 +136,20 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
             print("The number of columns generated is: " + str(len(ordered_routes)))
             results_dict[iteration] = (obj_val, time.time() - start_time)
 
-        if len(ordered_routes) > 0:
+        if len(ordered_routes) > 0 or best_reward < -0.001:
+            if DP_used:
+                master_problem.add_columns([route_opt], [cost_opt], [best_route], forbidden_edges, compelled_edges)
+                added_orders.append(best_route)
+
             for ordered_route in ordered_routes:
                 # Add the column to the master problem
                 if DP_used:
                     ordered_route = remap_route(ordered_route, cus_mapping)
-                cost = sum(
-                    time_matrix[ordered_route[i], ordered_route[i + 1]] for i in range(len(ordered_route) - 1))
+                cost = sum(time_matrix[ordered_route[i], ordered_route[i + 1]]
+                           for i in range(len(ordered_route) - 1))
                 route = convert_ordered_route(ordered_route, num_customers)
-
                 master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
                 added_orders.append(ordered_route)
-            DP_used = False
-        elif not DP_used:
-            DP_used = True
-            print("Changed to DP mode.")
         else:
             reoptimize = False
             # Optimality has been reached
@@ -173,7 +174,7 @@ def main():
     np.random.seed(10)
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_customers', type=int, default=100)
-    example_path = 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/model100_scaler1_Nby2'
+    example_path = 'C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/result/100_new_instances'
     parser.add_argument('--model_path', type=str, default=example_path)
     parser.add_argument('--epoch', type=int, default=200)
     args = parser.parse_args()
