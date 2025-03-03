@@ -28,7 +28,7 @@ from graph_reduction import Arc_Reduction
 
 def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled_edges,
                                            initial_routes, initial_costs, initial_orders, model_path,
-                                           red_param, red_costs):
+                                           model_size, red_param, red_costs):
     coords = VRP_instance.coords
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows
@@ -39,6 +39,7 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
 
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
+    assert num_customers <= model_size
 
     if not initial_routes:
         initial_routes, initial_costs, initial_orders = initialize_columns(num_customers, vehicle_capacity, time_matrix,
@@ -62,7 +63,7 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     added_orders = initial_orders
 
     device = torch.device('cpu')
-    GR = GNN(input_dim=7, hidden_dim=64, output_dim=num_customers + 1, n_layers=2)
+    GR = GNN(input_dim=7, hidden_dim=64, output_dim=model_size + 1, n_layers=2)
     checkpoint_main = torch.load(model_path, map_location=device)
     GR.load_state_dict(checkpoint_main)
     temperature = 3.5
@@ -81,7 +82,7 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     f3 = torch.reshape(f3, (dims[0], dims[1], 1))
     f4 = torch.reshape(f4, (dims[0], dims[1], 1))
 
-    mask = torch.ones(num_customers + 1, num_customers + 1).cpu()
+    mask = torch.ones(model_size + 1, model_size + 1).cpu()
     mask.fill_diagonal_(0)
 
     # Iterate until optimality is reached
@@ -91,7 +92,7 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     results_dict = {}
     start_time = time.time()
     reoptimize = True
-    max_time = 60 * 60
+    max_time = 3 * 60
     while iteration < max_iter:
 
         if time.time() - start_time > max_time:
@@ -120,11 +121,16 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
         price_adj[TC == math.inf] = 2
 
         distance_m = price_adj.unsqueeze(0)
+        if model_size != num_customers:
+            X, distance_m = populate_null_customers(model_size, X, price_adj)
+
         adj = torch.exp(-1. * distance_m / temperature)
         adj *= mask
         output = GR(X, adj)
-
+        if num_customers != model_size:
+            output = output[:num_customers + 1, :num_customers + 1]
         point_wise_distance = torch.matmul(output, torch.roll(torch.transpose(output, 1, 2), -1, 1))[0]
+
         AR = Arc_Reduction(prices, duals)
         red_prices, dist = AR.ml_arc_reduction(point_wise_distance, m=red_param, price_adj_mat=price_adj)
 
@@ -192,14 +198,15 @@ def main():
     torch.manual_seed(10)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_customers', type=int, default=200)
+    parser.add_argument('--num_customers', type=int, default=400)
     parser.add_argument('--red_param', type=int, default=10)
-    example_path = 'C:/Users/abdug/Python/UL4CG/PP/Saved_Models/PP_200/scatgnn_layer_2_hid_64_model_300_temp_3.500.pth'
+    example_path = 'C:/Users/abdug/Python/UL4CG/PP/Saved_Models/PP_500/scatgnn_layer_2_hid_64_model_300_temp_3.500.pth'
     parser.add_argument('--model_path', type=str, default=example_path)
+    parser.add_argument('--model_size', type=int, default=500)
     args = parser.parse_args()
     num_customers = args.num_customers
     red_param = args.red_param
-
+    model_size = args.model_size
     model_path = args.model_path
 
     file = "config.json"
@@ -207,13 +214,20 @@ def main():
         config = json.load(f)
 
     print("Unsupervised Learning Module Used")
-    print("Instances of size: "+str(num_customers))
-
+    print("Instances of size: " + str(num_customers))
     results = []
     performance_dicts = []
     red_costs = []
-    for experiment in range(10):
-        VRP_instance = Instance_Generator(N=num_customers)
+    directory = config["G&H Dataset"] + str(num_customers)
+    for instance in os.listdir(directory):
+        # for experiment in range(50):
+        file = directory + "/" + instance
+        # file = directory + "/" + "C206.txt"
+        print(file)
+
+        # VRP_instance = Instance_Generator(N=num_customers)
+        VRP_instance = Instance_Generator(file_path=file, config=config, instance_type="G&H")
+
         forbidden_edges = []
         compelled_edges = []
         initial_routes = []
@@ -227,10 +241,11 @@ def main():
                                                                                                initial_costs,
                                                                                                initial_orders,
                                                                                                model_path,
+                                                                                               model_size,
                                                                                                red_param,
                                                                                                red_costs)
 
-        print("solution: " + str(sol))
+        # print("solution: " + str(sol))
         print("objective: " + str(obj))
         print("number of columns: " + str(len(orders)))
 
@@ -246,9 +261,9 @@ def main():
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 
-    # pp.hist(red_costs)
-    # pp.title("Reduced Cost Histogram for POMO-CG")
-    # pp.show()
+    '''pp.hist(red_costs, bins=10)
+    pp.title("Reduced Cost Histogram for ULGR")
+    pp.show()'''
 
 
 if __name__ == "__main__":

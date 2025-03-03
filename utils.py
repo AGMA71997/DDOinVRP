@@ -9,19 +9,11 @@ import sys
 import statistics
 
 
-def result_analyzer(method, base, num_customers, scaler=None):
+def result_analyzer(method, base, num_customers, addition=None, switch=False):
     if not os.getcwd().endswith('results'):
         os.chdir('results')
 
-    if method == "DP":
-        file_name = 'DP Results N=' + str(num_customers) + ' ' + scaler
-    elif method == "RL":
-        assert scaler is not None
-        file_name = 'RL Results N=' + str(num_customers) + ' ' + scaler
-    else:
-        print("No such method")
-        sys.exit(0)
-
+    file_name = method + ' Results N=' + str(num_customers) + ' ' + addition
     pickle_in = open(file_name, 'rb')
     performance_dicts = pickle.load(pickle_in)
 
@@ -29,10 +21,15 @@ def result_analyzer(method, base, num_customers, scaler=None):
     baseline = pickle.load(pickle_in)
     unmatched = 0
 
+    if switch:
+        per_dict_copy = performance_dicts.copy()
+        performance_dicts = baseline
+        baseline = per_dict_copy
+
     time_obj_map = {}
     if method == "RL":
-        Time_limit = 200
-        for x in range(0, Time_limit, 2):
+        Time_limit = 700
+        for x in range(0, Time_limit, 1):
             time_obj_map[x] = []
     else:
         Time_limit = 3600
@@ -41,17 +38,29 @@ def result_analyzer(method, base, num_customers, scaler=None):
 
     DP_catch_up = []
     Gaps = []
+    method_run_times = []
+    method_CG_iters = []
+    baseline_CG_iters = []
+    method_PP_time = []
+    baseline_PP_time = []
     for index, instance_dict in enumerate(performance_dicts):
         baseline_dict = baseline[index]
-        #print(instance_dict)
-        #print(baseline_dict)
-        #print("---------------------------")
+        skip = False
+        # print(instance_dict)
+        # print(baseline_dict)
+        # print("---------------------------")
 
         Gaps.append((instance_dict["Final"][0] - baseline_dict["Final"][0]) * 100 / baseline_dict["Final"][0])
+        if (instance_dict["Final"][0] - baseline_dict["Final"][0]) * 100 / baseline_dict["Final"][0] > 20:
+            skip = True
+        method_run_times.append(instance_dict["Final"][1])
+        method_CG_iters.append(len(instance_dict) * 10)
+        baseline_CG_iters.append(len(baseline_dict) * 10)
+        method_PP_time.append(instance_dict["Final"][1] * 0.9 / (len(instance_dict) * 10))
+        baseline_PP_time.append((baseline_dict["Final"][1] * 0.9 / (len(baseline_dict) * 10)))
         for key in instance_dict:
             time = instance_dict[key][1]
             obj_gap = (instance_dict[key][0] - baseline_dict["Final"][0]) * 100 / baseline_dict["Final"][0]
-
             for key2 in time_obj_map:
                 if time < key2:
                     time_obj_map[key2].append(obj_gap)
@@ -68,14 +77,17 @@ def result_analyzer(method, base, num_customers, scaler=None):
                 break
 
         if stoppage is None:
-            if baseline_dict['Final'][0] <= algo_final:
+            if baseline_dict['Final'][0] <= algo_final and not skip:
                 stoppage = baseline_dict['Final'][1]
                 DP_catch_up.append(stoppage / instance_dict['Final'][1])
+                print((Gaps[index], stoppage / instance_dict['Final'][1]))
             else:
                 unmatched += 1
                 continue
         else:
-            DP_catch_up.append(stoppage / instance_dict['Final'][1])
+            if not skip:
+                DP_catch_up.append(stoppage / instance_dict['Final'][1])
+                print((Gaps[index], stoppage / instance_dict['Final'][1]))
 
     CI = {}
     x = []
@@ -102,7 +114,13 @@ def result_analyzer(method, base, num_customers, scaler=None):
         print("already deleted")
 
     print("Unmatched objectives: " + str(unmatched))
+    print(len(DP_catch_up))
     print("Average final objective gap is: " + str(statistics.mean(Gaps)))
+    print("Avg Nr of CG iterations for method: " + str(statistics.mean(method_CG_iters)))
+    print("Avg Nr of CG iterations for baseline: " + str(statistics.mean(baseline_CG_iters)))
+    print(" Mean run time for solving PP with method: " + str(statistics.mean(method_PP_time)))
+    print(" Mean run time for solving PP with baseline: " + str(statistics.mean(baseline_PP_time)))
+    print("Mean Run Time for method: " + str(statistics.mean(method_run_times)))
     print("Objective gaps along iterations:" + str(y))
     print("Run time along iterations: " + str(x))
     print("With confidence interval: " + str(CI))
@@ -119,8 +137,11 @@ def result_analyzer(method, base, num_customers, scaler=None):
     pp.show()
 
     pp.hist(Gaps)
-    pp.xlabel("Percentage Gaps")
-    pp.ylabel("Frequency")
+    pp.title("Objective Gaps Histogram")
+    pp.show()
+
+    pp.hist(DP_catch_up)
+    pp.title("Time Gaps Histogram")
     pp.show()
 
 
@@ -151,6 +172,16 @@ def calculate_compatibility(time_windows, travel_times, service_times):
     numpy.fill_diagonal(TC_late, math.inf)
 
     return TC_early, TC_late
+
+
+def populate_null_customers(model_size, X, price_adj):
+    num_cols = X.shape[2]
+    new_X = torch.zeros((1, model_size + 1, num_cols), dtype=X.dtype)
+    new_price_adj = torch.zeros((1, model_size + 1, model_size + 1), dtype=X.dtype) + 2
+    new_X[:, :X.shape[1], :] = X
+    new_price_adj[:, :price_adj.shape[1], :price_adj.shape[1]] = price_adj
+
+    return new_X, new_price_adj
 
 
 def reshape_problem(coords, demands, time_windows, duals, service_times, time_matrix, prices, dist=None):
@@ -306,12 +337,13 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 
 
 def main():
-    method = 'RL'
-    num_customers = 100
-    scaler = "New"
-    base = 'True Old Heuristic Config'
+    method = 'K-Opt'
+    num_customers = 1000
+    addition = "ULGR 10 Large Scale Instances"
+    baseline = 'True Large Scale Instances'
+    switch = True
 
-    result_analyzer(method, base, num_customers, scaler)
+    result_analyzer(method, baseline, num_customers, addition, switch)
 
 
 if __name__ == "__main__":

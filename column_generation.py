@@ -18,7 +18,7 @@ from graph_reduction import Node_Reduction, Arc_Reduction
 
 
 def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled_edges, initial_routes,
-                                        initial_costs, initial_orders, policy, arc_red):
+                                        initial_costs, initial_orders, policy, arc_red, red_costs):
     coords = VRP_instance.coords
     time_matrix = VRP_instance.time_matrix
     time_windows = VRP_instance.time_windows
@@ -52,7 +52,7 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
     added_orders = initial_orders
     reoptimize = True
     max_iter = 5000
-    max_time = 60 * 60
+    max_time = 3 * 60
     start_time = time.time()
     results_dict = {}
     iteration = 0
@@ -86,6 +86,8 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
                                     red_duals, red_sts, forbidden_edges, red_prices)
             ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(arc_red=arc_red, policy=policy,
                                                                                  max_threads=100)
+            # red_costs.append(reduced_cost)
+            # break
         else:
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
                                     red_duals, red_sts, forbidden_edges, red_prices)
@@ -581,8 +583,8 @@ class Subproblem:
                     start_time = None
                     if policy == "DP":
                         best_bound = 0
-                        TTL = 30
-                        PLB = -1
+                        TTL = 3
+                        PLB = -0.1
                     else:
                         best_bound = 0.5  # math.inf
                         TTL = 5
@@ -701,7 +703,7 @@ def main():
     random.seed(10)
     np.random.seed(10)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_customers', type=int, default=200)
+    parser.add_argument('--num_customers', type=int, default=100)
     parser.add_argument('--policy', type=str, default='DP')
     parser.add_argument('--AR', type=bool, default=False)
     args = parser.parse_args()
@@ -718,15 +720,17 @@ def main():
 
     results = []
     performance_dicts = []
-    # directory = config["Solomon Test Dataset"]
-    # for instance in os.listdir(directory):
-    for experiment in range(10):
-        # file = directory + "/" + instance
+    red_costs = []
+    #directory = config["Solomon Test Dataset"]
+    #directory = config["G&H Dataset"]+str(num_customers)
+    #for instance in os.listdir(directory):
+    for experiment in range(50):
+        #file = directory + "/" + instance
         # file = directory + "/" + "C206.txt"
-        # print(file)
+        #print(file)
 
         VRP_instance = Instance_Generator(N=num_customers)
-        # VRP_instance = Instance_Generator(file_path=file, config=config)
+        # VRP_instance = Instance_Generator(file_path=file, config=config,instance_type="G&H")
 
         print("This instance has " + str(num_customers) + " customers.")
         forbidden_edges = []
@@ -741,9 +745,10 @@ def main():
                                                                                             initial_routes,
                                                                                             initial_costs,
                                                                                             initial_orders,
-                                                                                            policy, arc_red)
+                                                                                            policy, arc_red,
+                                                                                            red_costs)
 
-        print("solution: " + str(sol))
+        # print("solution: " + str(sol))
         print("objective: " + str(obj))
         print("number of columns: " + str(len(orders)))
 
@@ -755,9 +760,13 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pickle_out = open(policy + ' Results N=' + str(num_customers) + ' ' + str(arc_red) + ' Large Scale Instances', 'wb')
+    pickle_out = open(policy + ' Results N=' + str(num_customers) + ' ' + str(arc_red), 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
+
+    '''pp.hist(red_costs, bins=10)
+    pp.title("Reduced Cost Histogram for DP Heuristic")
+    pp.show()'''
 
 
 if __name__ == "__main__":
