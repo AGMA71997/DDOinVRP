@@ -68,6 +68,8 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     results_dict = {}
     start_time = time.time()
     dual_plot = []
+    RL_fail_count = 0
+    use_RL = True
     while iteration < max_iter:
         DP_used = False
 
@@ -80,16 +82,19 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
         dual_plot += [x for x in duals if x > 0]
 
         prices = create_price(time_matrix, duals)
-        env_params = {'problem_size': num_customers,
-                      'pomo_size': num_customers}
-        env = Env(**env_params)
-        time_1 = time.time()
-        env.declare_problem(coords, demands, time_windows,
-                            duals, service_times, time_matrix, prices, vehicle_capacity, 1, True)
+        if use_RL:
+            env_params = {'problem_size': num_customers,
+                          'pomo_size': num_customers}
+            env = Env(**env_params)
+            time_1 = time.time()
+            env.declare_problem(coords, demands, time_windows,
+                                duals, service_times, time_matrix, prices, vehicle_capacity, 1, True)
 
-        pp_rl_solver = ESPRCTW_RL_solver(env, model, prices)
-        ordered_routes, best_route, best_reward = pp_rl_solver.generate_columns()
-        time_2 = time.time()
+            pp_rl_solver = ESPRCTW_RL_solver(env, model, prices)
+            ordered_routes, best_route, best_reward = pp_rl_solver.generate_columns()
+            time_2 = time.time()
+        else:
+            best_reward = 0
 
         if best_reward < -0.001:
             for ordered_route in ordered_routes:
@@ -98,7 +103,12 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
 
             while best_route[-1] == best_route[-2]:
                 best_route.pop()
+            RL_fail_count = 0
         else:
+            RL_fail_count += 1
+            if RL_fail_count > 1:
+                use_RL = False
+
             print("Changed to DP mode.")
             DP_used = True
 
@@ -127,13 +137,16 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
         iteration += 1
         obj_val = master_problem.model.objval
         cum_time += time_2 - time_1
+        col_count = len(ordered_routes)
+        if DP_used:
+            col_count += 1
         if iteration % 10 == 0:
             print("Iteration: " + str(iteration))
             print("RC is " + str(best_reward))
             print("Best route: " + str(best_route))
             print("The total time spent on PP is :" + str(cum_time))
             print("The objective value is: " + str(obj_val))
-            print("The number of columns generated is: " + str(len(ordered_routes)))
+            print("The number of columns generated is: " + str(col_count))
             results_dict[iteration] = (obj_val, time.time() - start_time)
 
         if len(ordered_routes) > 0 or best_reward < -0.001:
