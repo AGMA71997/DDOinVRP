@@ -1,7 +1,3 @@
-import math
-
-import numpy
-
 from instance_generator import Instance_Generator
 from column_generation import MasterProblem
 import time
@@ -15,13 +11,9 @@ import sys
 import statistics
 import argparse
 from column_generation import Subproblem
-from ESPPRC_heuristic import DSSR_ESPPRC, ESPPRC
 from graph_reduction import Node_Reduction
-from ESPRCTWEnv import ESPRCTWEnv as Env
-from CG_with_RL import ESPRCTW_RL_solver
 import matplotlib.pyplot as pp
 
-from scipy.spatial import distance_matrix
 from UL_models import GNN
 from graph_reduction import Arc_Reduction
 
@@ -73,7 +65,12 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     TC = calculate_compatibility(time_windows, time_matrix, service_times)[1]
     TC = torch.tensor(TC, dtype=torch.float32) / tw_scaler
 
-    f0 = torch.tensor(np.expand_dims(coords, 0), dtype=torch.float32)
+    coords_scaler = coords.max()
+    if coords_scaler > 1:
+        coords_scaler = math.ceil(coords_scaler / 100) * 100
+    else:
+        coords_scaler = 1
+    f0 = torch.tensor(np.expand_dims(coords, 0), dtype=torch.float32) / coords_scaler
     f2 = torch.tensor(np.expand_dims(time_windows, 0), dtype=torch.float32) / tw_scaler
     f3 = torch.tensor(np.expand_dims(demands, 0), dtype=torch.float32) / vehicle_capacity
     f4 = torch.tensor(np.expand_dims(service_times, 0), dtype=torch.float32) / tw_scaler
@@ -107,8 +104,12 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
         price_scaler = max(abs(max_val), abs(min_val))
 
         time_1 = time.time()
+        if coords_scaler == 1:
+            dual_scaler = 1
+        else:
+            dual_scaler = tw_scaler/2
+        f1 = torch.tensor(np.expand_dims(duals, 0), dtype=torch.float32) / dual_scaler
 
-        f1 = torch.tensor(np.expand_dims(duals, 0), dtype=torch.float32)
         f1 = torch.reshape(f1, (dims[0], dims[1], 1))
         X = torch.cat([f0, f1, f2, f3, f4], dim=2)
 

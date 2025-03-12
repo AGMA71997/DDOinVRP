@@ -68,8 +68,7 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     results_dict = {}
     start_time = time.time()
     dual_plot = []
-    RL_fail_count = 0
-    use_RL = True
+    arc_red = True
     while iteration < max_iter:
         DP_used = False
 
@@ -82,19 +81,16 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
         dual_plot += [x for x in duals if x > 0]
 
         prices = create_price(time_matrix, duals)
-        if use_RL:
-            env_params = {'problem_size': num_customers,
-                          'pomo_size': num_customers}
-            env = Env(**env_params)
-            time_1 = time.time()
-            env.declare_problem(coords, demands, time_windows,
-                                duals, service_times, time_matrix, prices, vehicle_capacity, 1, True)
+        time_1 = time.time()
+        env_params = {'problem_size': num_customers,
+                      'pomo_size': num_customers}
+        env = Env(**env_params)
+        env.declare_problem(coords, demands, time_windows,
+                            duals, service_times, time_matrix, prices, vehicle_capacity, 1, True)
 
-            pp_rl_solver = ESPRCTW_RL_solver(env, model, prices)
-            ordered_routes, best_route, best_reward = pp_rl_solver.generate_columns()
-            time_2 = time.time()
-        else:
-            best_reward = 0
+        pp_rl_solver = ESPRCTW_RL_solver(env, model, prices)
+        ordered_routes, best_route, best_reward = pp_rl_solver.generate_columns()
+        time_2 = time.time()
 
         if best_reward < -0.001:
             for ordered_route in ordered_routes:
@@ -103,11 +99,7 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
 
             while best_route[-1] == best_route[-2]:
                 best_route.pop()
-            RL_fail_count = 0
         else:
-            RL_fail_count += 1
-            if RL_fail_count > 1:
-                use_RL = False
 
             print("Changed to DP mode.")
             DP_used = True
@@ -126,7 +118,7 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
             N = len(red_cor) - 1
             subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
                                     red_duals, red_sts, forbidden_edges, red_prices)
-            best_route, best_reward, ordered_routes = subproblem.solve_heuristic(arc_red=False, policy="DP",
+            best_route, best_reward, ordered_routes = subproblem.solve_heuristic(arc_red=arc_red, policy="DP",
                                                                                  max_threads=N)
             time_2 = time.time()
 
@@ -163,6 +155,9 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
                 route = convert_ordered_route(ordered_route, num_customers)
                 master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
                 added_orders.append(ordered_route)
+        elif DP_used and arc_red:
+            arc_red = False
+            print("Changed arc red mode.")
         else:
             reoptimize = False
             # Optimality has been reached
