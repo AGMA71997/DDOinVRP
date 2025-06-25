@@ -757,16 +757,16 @@ def main():
     results = []
     performance_dicts = []
     red_costs = []
-    directory = config["Solomon Test Dataset"]
+    # directory = config["Solomon Test Dataset"]
     # directory = config["G&H Dataset"]+str(num_customers)
-    for instance in os.listdir(directory):
-        # for experiment in range(5):
+    #for instance in os.listdir(directory):
+    for experiment in range(5):
         # file = directory + "/" + instance
-        file = directory + "/" + "C206.txt"
+        #file = directory + "/" + "C206.txt"
         # print(file)
 
-        # VRP_instance = Instance_Generator(N=num_customers)
-        VRP_instance = Instance_Generator(file_path=file, config=config, instance_type="Solomon")
+        VRP_instance = Instance_Generator(N=num_customers)
+        # VRP_instance = Instance_Generator(file_path=file, config=config, instance_type="Solomon")
 
         print("This instance has " + str(num_customers) + " customers.")
         forbidden_edges = []
