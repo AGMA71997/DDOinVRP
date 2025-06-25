@@ -1,8 +1,9 @@
+import math
 import sys
 
+import numpy
 import numpy as np
 import gurobipy as gb
-import torch
 
 from instance_generator import Instance_Generator
 import random
@@ -26,6 +27,8 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
     vehicle_capacity = VRP_instance.vehicle_capacity
     service_times = VRP_instance.service_times
     num_customers = VRP_instance.N
+
+    TC = calculate_compatibility(time_windows, time_matrix, service_times)[1]
 
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
@@ -52,7 +55,7 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
     added_orders = initial_orders
     reoptimize = True
     max_iter = 5000
-    max_time = 3 * 60
+    max_time = 10 * 60
     start_time = time.time()
     results_dict = {}
     iteration = 0
@@ -68,6 +71,7 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
         duals = master_problem.retain_duals()
 
         prices = create_price(time_matrix, duals) * -1
+        prices[TC == math.inf] = 100
 
         NR = Node_Reduction(coords, duals)
         red_cor = NR.dual_based_elimination()
@@ -127,8 +131,7 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
                 added_orders.append(label)
         elif arc_red:
             print("Arc red mode to be changed.")
-            break
-            # arc_red = False
+            arc_red = False
         else:
             # Optimality has been reached
             reoptimize = False
@@ -210,7 +213,7 @@ class MasterProblem:
 
         self.route_count += len(routes)
         self.model.update()
-        self.model.reset()
+        # self.model.reset()
 
     def solve(self):
         self.model.optimize()
@@ -262,11 +265,12 @@ class Subproblem:
             arrangements[cus] = numpy.argsort(self.price[cus, :])
         return arrangements
 
-    def determine_PULSE_bounds(self, increment, stopping_time):
+    def determine_PULSE_bounds(self, increment, stopping_time, early_stop):
         self.increment = increment
         self.no_of_increments = math.ceil(self.time_windows[0, 1] / self.increment - 1)
         self.bounds = np.zeros((self.num_customers, self.no_of_increments)) + math.inf
-        self.supreme_labels = {}
+        if early_stop:
+            return
         stopping_inc = math.ceil(stopping_time / self.increment - 1)
 
         for inc in range(self.no_of_increments, stopping_inc, -1):
@@ -279,22 +283,22 @@ class Subproblem:
                 remaining_capacity = self.vehicle_capacity - self.demands[cus]
                 current_time = self.time_windows[0, 1] - (self.no_of_increments - inc + 1) * increment
                 current_price = 0
-                best_bound = min(numpy.min(self.bounds[cus - 1, :]), 0)
                 solve = False
+                label_map = {cus: (inc, current_price)}
                 thread = Bound_Threader(target=self.bound_calculator, args=(start_point, current_label,
                                                                             remaining_capacity,
                                                                             current_time, current_price,
-                                                                            best_bound, solve))
+                                                                            solve, label_map))
                 thread.start()
                 threads.append(thread)
 
             for index, thread in enumerate(threads):
                 label, lower_bound = thread.join()
-                self.bounds[index, inc - 1] = lower_bound
-                self.supreme_labels[index + 1, inc] = label
+                if label:
+                    self.bounds[label[0] - 1, inc - 1] = lower_bound
 
     def bound_calculator(self, start_point, current_label, remaining_capacity, current_time,
-                         current_price, best_bound, solve):
+                         current_price, solve, label_map=None):
 
         if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0:
             return [], math.inf
@@ -307,6 +311,14 @@ class Subproblem:
                         self.primal_label = current_label
             else:
                 current_price = 0
+
+            for node in current_label:
+                if node in label_map:
+                    inc = label_map[node][0]
+                    contrib = current_price - label_map[node][1]
+                    if contrib < self.bounds[node - 1, inc - 1]:
+                        self.bounds[node - 1, inc - 1] = contrib
+
             return current_label, current_price
 
         waiting_time = max(self.time_windows[start_point, 0] - current_time, 0)
@@ -315,15 +327,18 @@ class Subproblem:
 
         inc = math.ceil(self.no_of_increments - (self.time_windows[0, 1] - current_time) / self.increment)
         if 0 < inc <= self.no_of_increments:
+            if label_map is None:
+                label_map = {}
+            label_map[start_point] = (inc, current_price)
             if self.bounds[start_point - 1, inc - 1] < math.inf:
                 bound_estimate = current_price + self.bounds[start_point - 1, inc - 1]
                 if solve:
                     if bound_estimate > self.primal_bound:
                         return [], math.inf
                 else:
-                    if bound_estimate > best_bound:
+                    if bound_estimate > min(numpy.min(self.bounds[start_point - 1, :]), 0):
                         return [], math.inf
-
+        best_bound = 0
         best_label = []
         best_price_indices = self.price_arrangement[start_point]
         for index in range(len(best_price_indices)):
@@ -361,7 +376,7 @@ class Subproblem:
                         CT = math.inf
 
                 label, lower_bound = self.bound_calculator(j, copy_label, RC, CT, CP,
-                                                           best_bound, solve)
+                                                           solve, label_map.copy())
 
                 if lower_bound < best_bound:
                     best_bound = lower_bound
@@ -409,22 +424,20 @@ class Subproblem:
         return best_label, best_price
 
     def DP_heuristic(self, start_point, current_label, remaining_capacity, current_time,
-                     current_price, best_bound, start_time, thread_time_limit=3, price_lb=-0.1):
+                     current_price, start_time, thread_time_limit=3, price_lb=-0.1, label_map=None):
         if start_time is None:
             start_time = time.time()
 
         terminate = self.terminate
+        if terminate:
+            return [], math.inf, terminate
+
         if time.time() - start_time > thread_time_limit:
             terminate = True
             self.thread_count += 1
             # print("Thread " + str(current_label[1]) + " failed.")
             if self.thread_count == self.max_threads:
                 self.terminate = True
-
-        if current_time > self.time_windows[start_point, 1] or remaining_capacity < 0 or terminate \
-                or (current_price > 0 and current_time / self.time_windows[0, 1] > 0.75) or \
-                (current_price > 0 and remaining_capacity / self.vehicle_capacity < 0.25):
-            return [], math.inf, terminate
 
         if start_point == 0 and len(current_label) > 1:
             if current_price < price_lb:
@@ -434,13 +447,32 @@ class Subproblem:
                 # print("Thread " + str(current_label[1]) + " succeeded.")
                 if self.col_count == self.max_columns or self.thread_count == self.max_threads:
                     self.terminate = True
+
+            for node in current_label:
+                if node in label_map:
+                    inc = label_map[node][0]
+                    contrib = current_price - label_map[node][1]
+                    if contrib < self.bounds[node - 1, inc - 1]:
+                        self.bounds[node - 1, inc - 1] = contrib
+
             return current_label, current_price, terminate
 
         waiting_time = max(self.time_windows[start_point, 0] - current_time, 0)
         current_time += waiting_time
         current_time += self.service_times[start_point]
 
+        inc = math.ceil(self.no_of_increments - (self.time_windows[0, 1] - current_time) / self.increment)
+        if 0 < inc <= self.no_of_increments:
+            if label_map is None:
+                label_map = {}
+            label_map[start_point] = (inc, current_price)
+            if self.bounds[start_point - 1, inc - 1] < math.inf:
+                bound_estimate = current_price + self.bounds[start_point - 1, inc - 1]
+                if bound_estimate > min(numpy.min(self.bounds[start_point - 1, :]), 0):
+                    return [], math.inf, terminate
+
         best_label = []
+        best_bound = 0
         for j in self.price_arrangement[start_point]:
             if j > 0:
                 if j in current_label:
@@ -458,7 +490,11 @@ class Subproblem:
 
                 copy_label.append(j)
                 RC -= self.demands[j]
+                if RC < 0:
+                    continue
                 CT += self.time_matrix[start_point, j]
+                if CT > self.time_windows[j, 1]:
+                    continue
                 CP += self.price[start_point, j]
 
                 if len(copy_label) > 2 and j != 0:
@@ -472,11 +508,11 @@ class Subproblem:
                     roll_back_time = max(roll_back_time, self.time_windows[j, 0])
 
                     if roll_back_price <= CP and roll_back_time <= max(self.time_windows[j, 0], CT):
-                        CT = math.inf
+                        continue
 
                 label, lower_bound, terminate = self.DP_heuristic(j, copy_label, RC, CT, CP,
-                                                                  best_bound, start_time, thread_time_limit,
-                                                                  price_lb)
+                                                                  start_time, thread_time_limit,
+                                                                  price_lb, label_map.copy())
 
                 if lower_bound < best_bound:
                     best_bound = lower_bound
@@ -554,8 +590,11 @@ class Subproblem:
 
         return current_path, current_cost
 
-    def solve_heuristic(self, arc_red=False, policy="DP", max_columns=20, max_threads=None,
+    def solve_heuristic(self, arc_red=False, policy="DP", max_columns=10, max_threads=None,
                         k_opt_iter=100, dist=None):
+
+        self.determine_PULSE_bounds(0.25, 0, True)
+
         if policy == "DP" or "k-opt":
             self.terminate = False
             self.col_count = 0
@@ -582,17 +621,15 @@ class Subproblem:
                     current_price = self.price[0, cus]
                     start_time = None
                     if policy == "DP":
-                        best_bound = 0
-                        TTL = 3
+                        TTL = 10
                         PLB = -0.1
                     else:
-                        best_bound = 0.5  # math.inf
-                        TTL = 5
+                        TTL = 1
                         PLB = -0.1
                     thread = Bound_Threader(target=self.DP_heuristic, args=(start_point, current_label,
                                                                             remaining_capacity,
                                                                             current_time, current_price,
-                                                                            best_bound, start_time, TTL,
+                                                                            start_time, TTL,
                                                                             PLB))
                     thread.start()
                     threads.append(thread)
@@ -643,7 +680,7 @@ class Subproblem:
         self.primal_bound = 0
         self.primal_label = []
 
-        self.determine_PULSE_bounds(0.5, 0.75 * self.time_windows[0, 1])
+        self.determine_PULSE_bounds(0.25, 0.25 * self.time_windows[0, 1], False)
         print("Bounds Computed")
 
         threads = []
@@ -657,12 +694,11 @@ class Subproblem:
                 remaining_capacity = self.vehicle_capacity - self.demands[cus]
                 current_time = self.time_matrix[0, cus]
                 current_price = self.price[0, cus]
-                best_bound = 0
                 solve = True
                 thread = Bound_Threader(target=self.bound_calculator, args=(start_point, current_label,
                                                                             remaining_capacity,
                                                                             current_time, current_price,
-                                                                            best_bound, solve))
+                                                                            solve))
                 thread.start()
                 threads.append(thread)
 
@@ -705,7 +741,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_customers', type=int, default=100)
     parser.add_argument('--policy', type=str, default='DP')
-    parser.add_argument('--AR', type=bool, default=False)
+    parser.add_argument('--AR', type=bool, default=True)
     args = parser.parse_args()
     num_customers = args.num_customers
     policy = args.policy
@@ -721,16 +757,16 @@ def main():
     results = []
     performance_dicts = []
     red_costs = []
-    #directory = config["Solomon Test Dataset"]
-    #directory = config["G&H Dataset"]+str(num_customers)
-    #for instance in os.listdir(directory):
-    for experiment in range(50):
-        #file = directory + "/" + instance
-        # file = directory + "/" + "C206.txt"
-        #print(file)
+    directory = config["Solomon Test Dataset"]
+    # directory = config["G&H Dataset"]+str(num_customers)
+    for instance in os.listdir(directory):
+        # for experiment in range(5):
+        # file = directory + "/" + instance
+        file = directory + "/" + "C206.txt"
+        # print(file)
 
-        VRP_instance = Instance_Generator(N=num_customers)
-        # VRP_instance = Instance_Generator(file_path=file, config=config,instance_type="G&H")
+        # VRP_instance = Instance_Generator(N=num_customers)
+        VRP_instance = Instance_Generator(file_path=file, config=config, instance_type="Solomon")
 
         print("This instance has " + str(num_customers) + " customers.")
         forbidden_edges = []
