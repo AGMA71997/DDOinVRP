@@ -2,9 +2,6 @@ from dataclasses import dataclass
 import torch
 import numpy
 
-from ESPRCTWProblemDef import get_random_problems, augment_xy_data_by_8_fold
-
-
 @dataclass
 class Reset_State:
     depot_xy: torch.Tensor = None
@@ -182,74 +179,6 @@ class ESPRCTWEnv:
         self.reset_state.prices = prices
         self.reset_state.duals = self.depot_node_duals[:, 1:]
         self.reset_state.service_times = self.depot_node_service_time[:, 1:]
-
-        self.step_state.BATCH_IDX = self.BATCH_IDX
-        self.step_state.POMO_IDX = self.POMO_IDX
-
-    def load_problems(self, batch_size, aug_factor=1):
-        self.batch_size = batch_size
-
-        if not self.FLAG__use_saved_problems:
-            depot_xy, node_xy, node_demand, time_windows, depot_time_window, duals, service_times, travel_times, prices \
-                = get_random_problems(batch_size, self.problem_size)
-        else:
-            depot_xy = self.saved_depot_xy[self.saved_index:self.saved_index + batch_size]
-            node_xy = self.saved_node_xy[self.saved_index:self.saved_index + batch_size]
-            node_demand = self.saved_node_demand[self.saved_index:self.saved_index + batch_size]
-            time_windows = self.saved_time_windows[self.saved_index:self.saved_index + batch_size]
-            depot_time_window = self.saved_depot_time_window[self.saved_index:self.saved_index + batch_size]
-            duals = self.saved_duals[self.saved_index:self.saved_index + batch_size]
-            service_times = self.saved_service_times[self.saved_index:self.saved_index + batch_size]
-            travel_times = self.saved_travel_times[self.saved_index:self.saved_index + batch_size]
-            prices = self.saved_prices[self.saved_index:self.saved_index + batch_size]
-            self.saved_index += batch_size
-
-        if aug_factor > 1:
-            if aug_factor == 8:
-                self.batch_size = self.batch_size * 8
-                depot_xy = augment_xy_data_by_8_fold(depot_xy)
-                node_xy = augment_xy_data_by_8_fold(node_xy)
-                node_demand = node_demand.repeat(8, 1)
-                time_windows = time_windows.repeat(8, 1)
-                depot_time_window = depot_time_window.repeat(8, 1)
-                duals = duals.repeat(8, 1)
-                service_times = service_times.repeat(8, 1)
-                travel_times = travel_times.repeat(8, 1)
-                prices = prices.repeat(8, 1)
-            else:
-                raise NotImplementedError
-
-        self.depot_node_xy = torch.cat((depot_xy, node_xy), dim=1)
-        # shape: (batch, problem+1, 2)
-        depot_demand = torch.zeros(size=(self.batch_size, 1))
-        # shape: (batch, 1)
-        self.depot_node_demand = torch.cat((depot_demand, node_demand), dim=1)
-        # shape: (batch, problem+1)
-
-        depot_dual = torch.zeros(size=(self.batch_size, 1))
-        self.depot_node_duals = torch.cat((depot_dual, duals), dim=1)
-
-        self.depot_node_time_windows = torch.cat((depot_time_window, time_windows), dim=1)
-        # shape: (batch, problem+1, 2)
-
-        depot_service_time = torch.zeros(size=(self.batch_size, 1))
-        self.depot_node_service_time = torch.cat((depot_service_time, service_times), dim=1)
-
-        self.travel_times = travel_times
-        self.prices = prices
-
-        self.BATCH_IDX = torch.arange(self.batch_size)[:, None].expand(self.batch_size, self.pomo_size)
-        self.POMO_IDX = torch.arange(self.pomo_size)[None, :].expand(self.batch_size, self.pomo_size)
-
-        self.reset_state.depot_xy = depot_xy
-        self.reset_state.node_xy = node_xy
-        self.reset_state.node_demand = node_demand
-        self.reset_state.time_windows = time_windows
-        self.reset_state.depot_time_window = depot_time_window
-        self.reset_state.travel_times = travel_times
-        self.reset_state.prices = prices
-        self.reset_state.duals = duals
-        self.reset_state.service_times = service_times
 
         self.step_state.BATCH_IDX = self.BATCH_IDX
         self.step_state.POMO_IDX = self.POMO_IDX

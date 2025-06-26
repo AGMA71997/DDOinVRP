@@ -32,6 +32,8 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     # Ensure all input lists are of the same length
     assert len(time_matrix) == len(demands) == len(time_windows)
 
+    TC = calculate_compatibility(time_windows, time_matrix, service_times)[1]
+
     if not initial_routes:
         initial_routes, initial_costs, initial_orders = initialize_columns(num_customers, vehicle_capacity, time_matrix,
                                                                            service_times, time_windows,
@@ -62,7 +64,9 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     # Iterate until optimality is reached
     reoptimize = True
     max_iter = 5000
-    max_time = 3 * 60
+    max_time = 10 * 60
+    cons_fail = 0
+    fail_tresh = 5
     iteration = 0
     cum_time = 0
     results_dict = {}
@@ -82,17 +86,23 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
 
         prices = create_price(time_matrix, duals)
         time_1 = time.time()
-        env_params = {'problem_size': num_customers,
-                      'pomo_size': num_customers}
-        env = Env(**env_params)
-        env.declare_problem(coords, demands, time_windows,
-                            duals, service_times, time_matrix, prices, vehicle_capacity, 1, True)
+        if cons_fail < fail_tresh:
+            env_params = {'problem_size': num_customers,
+                          'pomo_size': num_customers}
+            env = Env(**env_params)
+            env.declare_problem(coords, demands, time_windows,
+                                duals, service_times, time_matrix, prices, vehicle_capacity, 1, True)
 
-        pp_rl_solver = ESPRCTW_RL_solver(env, model, prices)
-        ordered_routes, best_route, best_reward = pp_rl_solver.generate_columns()
-        time_2 = time.time()
+            pp_rl_solver = ESPRCTW_RL_solver(env, model, prices)
+            ordered_routes, best_route, best_reward = pp_rl_solver.generate_columns()
+            time_2 = time.time()
+        else:
+            if cons_fail == fail_tresh:
+                print("No more RL")
+            best_reward = 0
 
         if best_reward < -0.001:
+            cons_fail = 0
             for ordered_route in ordered_routes:
                 while ordered_route[-1] == ordered_route[-2]:
                     ordered_route.pop()
@@ -100,11 +110,14 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
             while best_route[-1] == best_route[-2]:
                 best_route.pop()
         else:
-
-            print("Changed to DP mode.")
+            cons_fail += 1
+            if cons_fail < fail_tresh:
+                print("Changed to DP mode.")
             DP_used = True
 
             prices = prices * -1
+            prices[TC == math.inf] = 100
+
             NR = Node_Reduction(coords, duals)
             red_cor = NR.dual_based_elimination()
             red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices, cus_mapping = reshape_problem(red_cor,
@@ -201,6 +214,7 @@ def main():
     for instance in os.listdir(directory):
         # for experiment in range(50):
         file = directory + "/" + instance
+        # file = directory + "/" + "C206.txt"
         print(file)
 
         VRP_instance = Instance_Generator(file_path=file, config=config)
