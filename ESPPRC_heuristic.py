@@ -1,7 +1,6 @@
 from collections import deque
 # from functools import lru_cache
 from utils import *
-from ESPRCTWProblemDef import create_duals
 from instance_generator import Instance_Generator
 import time
 import random
@@ -209,7 +208,7 @@ class ESPPRC:
         if time > self.time_windows[to_cus, 1]:
             return
 
-        cost = (from_label.cost + self.costs[from_cus, to_cus])
+        cost = from_label.cost + self.costs[from_cus, to_cus]
         # unreachable customers update is delayed since from_label needs to
         # visit every customer before knowing its own set
         return self.label_cls(to_cus, cost, load, time, self.customer_labels, from_label)
@@ -311,9 +310,10 @@ class DSSR_ESPPRC(SSR_SPPRC):
                     self.critical_cs.update(repeated)
                 else:
                     yield label
+                assert label.path()[-1] == 0 and label.path()[0] == 0 and label.cost < 0
 
         final_labels = list(acyclic_labels())
-        print(len(final_labels))
+        # print(len(final_labels))
         # final_labels = final_labels[:min(200, len(final_labels))] ###################
         return final_labels
 

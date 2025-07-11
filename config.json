@@ -1,0 +1,10 @@
+{
+  "storge_directory_raw": "Raw_ESPRCTW_Data",
+  "storge_directory_raw_heuristic": "Raw_ESPRCTW_Data_Heuristic",
+  "POMO Data": "C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/Processed_Data_for_POMO",
+  "POMO Data Heuristic": "C:/Users/abdug/Python/POMO-implementation/ESPRCTW/POMO/Processed_Data_for_POMO_heuristic",
+  "Solomon Dataset": "C:/Users/abdug/Python/DDOinVRP/Solomon Instances",
+  "Solomon Training Dataset": "C:/Users/abdug/Python/DDOinVRP/Solomon Instances/Training Set",
+  "Solomon Test Dataset": "C:/Users/abdug/Python/DDOinVRP/Solomon Instances/Test Set",
+  "G&H Dataset": "C:/Users/abdug/Python/DDOinVRP/Gehring_Homberger_Instances/"
+}

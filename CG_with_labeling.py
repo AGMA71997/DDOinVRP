@@ -12,7 +12,6 @@ import matplotlib.pyplot as pp
 from graph_reduction import Node_Reduction, Arc_Reduction
 from ESPPRC_heuristic import DSSR_ESPPRC
 
-
 def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled_edges, initial_routes,
                                         initial_costs, initial_orders):
     coords = VRP_instance.coords
@@ -53,7 +52,7 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
     results_dict = {}
     iteration = 0
     cum_time = 0
-    arc_red = True
+    arc_red = False
     while iteration < max_iter:
 
         if time.time() - start_time > max_time:
@@ -79,12 +78,16 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
         time_11 = time.time()
 
         subproblem = DSSR_ESPPRC(vehicle_capacity, red_dem, red_tws, red_sts, N,
-                                 red_tms, red_duals)
+                                 red_tms, red_prices)
         top_labels = subproblem.solve()
 
-        ordered_route = top_labels[0].path()
-        reduced_cost = top_labels[0].cost
-        del top_labels[0]
+        if len(top_labels) > 0:
+            ordered_route = top_labels[0].path()
+            reduced_cost = top_labels[0].cost
+            del top_labels[0]
+        else:
+            ordered_route = []
+            reduced_cost = 0
 
         time_22 = time.time()
 
@@ -98,12 +101,13 @@ def solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compelled
         cum_time += time_22 - time_11
         if iteration % 10 == 0:
             print("Iteration: " + str(iteration))
-            # print("Solving time for PP is: " + str(time_22 - time_11))
+            print("Solving time for PP is: " + str(time_22 - time_11))
             print("RC is " + str(reduced_cost))
             print("Best route: " + str(ordered_route))
             print("The objective value is: " + str(obj_val))
             print("The total number of generated columns is: " + str(len(top_labels) + 1))
             print("The total time spent on PP is: " + str(cum_time))
+            print('')
             results_dict[iteration] = (obj_val, time.time() - start_time)
 
         # Check if the candidate column is optimal
@@ -143,12 +147,9 @@ def main():
     random.seed(10)
     np.random.seed(10)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_customers', type=int, default=40)
+    parser.add_argument('--num_customers', type=int, default=100)
     args = parser.parse_args()
     num_customers = args.num_customers
-
-    global heuristic
-    heuristic = True
 
     file = "config.json"
     with open(file, 'r') as f:
@@ -187,7 +188,7 @@ def main():
     print("The mean objective value is: " + str(mean_obj))
     print("The std dev. objective is: " + str(std_obj))
 
-    pickle_out = open('DP Results N=' + str(num_customers), 'wb')
+    pickle_out = open('Labeling Algo Results N=' + str(num_customers), 'wb')
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 

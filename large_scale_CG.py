@@ -83,13 +83,13 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     mask.fill_diagonal_(0)
 
     # Iterate until optimality is reached
-    max_iter = 5000
+    max_iter = 111
     iteration = 0
     cum_time = 0
     results_dict = {}
     start_time = time.time()
     reoptimize = True
-    max_time = 3 * 60
+    max_time = 10 * 60
     while iteration < max_iter:
 
         if time.time() - start_time > max_time:
@@ -107,7 +107,7 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
         if coords_scaler == 1:
             dual_scaler = 1
         else:
-            dual_scaler = tw_scaler/2
+            dual_scaler = tw_scaler / 2
         f1 = torch.tensor(np.expand_dims(duals, 0), dtype=torch.float32) / dual_scaler
 
         f1 = torch.reshape(f1, (dims[0], dims[1], 1))
@@ -135,6 +135,8 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
         AR = Arc_Reduction(prices, duals)
         red_prices, dist = AR.ml_arc_reduction(point_wise_distance, m=red_param, price_adj_mat=price_adj)
 
+        prices[TC == math.inf] = 100
+        dist[TC == math.inf] = 0
         NR = Node_Reduction(coords, duals)
         red_cor = NR.dual_based_elimination()
         red_cor, red_dem, red_tws, red_duals, red_sts, red_tms, red_prices2, red_dist, cus_mapping = \
@@ -143,8 +145,10 @@ def UL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
         N = len(red_cor) - 1
         subproblem = Subproblem(N, vehicle_capacity, red_tms, red_dem, red_tws,
                                 red_duals, red_sts, forbidden_edges, red_prices2)
-        ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(policy="k-opt", dist=red_dist,
-                                                                             k_opt_iter=20, max_threads=100)
+        ordered_route, reduced_cost, top_labels = subproblem.solve_heuristic(policy="k-opt",
+                                                                             dist=red_dist, k_opt_iter=20,
+                                                                             max_threads=100, max_columns=20)
+
         # red_costs.append(reduced_cost)
         # break
 
@@ -199,11 +203,11 @@ def main():
     torch.manual_seed(10)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_customers', type=int, default=400)
+    parser.add_argument('--num_customers', type=int, default=200)
     parser.add_argument('--red_param', type=int, default=10)
-    example_path = 'C:/Users/abdug/Python/UL4CG/PP/Saved_Models/PP_500/scatgnn_layer_2_hid_64_model_300_temp_3.500.pth'
+    example_path = 'C:/Users/abdug/Python/UL4CG/PP/Saved_Models/PP_200/scatgnn_layer_2_hid_64_model_300_temp_3.500.pth'
     parser.add_argument('--model_path', type=str, default=example_path)
-    parser.add_argument('--model_size', type=int, default=500)
+    parser.add_argument('--model_size', type=int, default=200)
     args = parser.parse_args()
     num_customers = args.num_customers
     red_param = args.red_param
@@ -219,15 +223,14 @@ def main():
     results = []
     performance_dicts = []
     red_costs = []
-    directory = config["G&H Dataset"] + str(num_customers)
-    for instance in os.listdir(directory):
-        # for experiment in range(50):
-        file = directory + "/" + instance
-        # file = directory + "/" + "C206.txt"
-        print(file)
+    # directory = config["G&H Dataset"] + str(num_customers)
+    # for instance in os.listdir(directory):
+    for experiment in range(2):
+        # file = directory + "/" + instance
+        # print(file)
 
-        # VRP_instance = Instance_Generator(N=num_customers)
-        VRP_instance = Instance_Generator(file_path=file, config=config, instance_type="G&H")
+        VRP_instance = Instance_Generator(N=num_customers)
+        # VRP_instance = Instance_Generator(file_path=file, config=config, instance_type="G&H")
 
         forbidden_edges = []
         compelled_edges = []
@@ -268,4 +271,7 @@ def main():
 
 
 if __name__ == "__main__":
+    import cProfile
+
+    # cProfile.run('main()')
     main()

@@ -9,10 +9,9 @@ import sys
 import statistics
 
 
-def result_analyzer(method, base, num_customers, addition=None, switch=False):
+def result_analyzer(method, base, num_customers, addition=None, switch=False, show_list=None):
     if not os.getcwd().endswith('results'):
         os.chdir('results')
-
     file_name = method + ' Results N=' + str(num_customers) + ' ' + addition
     pickle_in = open(file_name, 'rb')
     performance_dicts = pickle.load(pickle_in)
@@ -43,23 +42,29 @@ def result_analyzer(method, base, num_customers, addition=None, switch=False):
     baseline_CG_iters = []
     method_PP_time = []
     baseline_PP_time = []
+
     for index, instance_dict in enumerate(performance_dicts):
         baseline_dict = baseline[index]
-        skip = False
-        # print(instance_dict)
-        # print(baseline_dict)
-        # print("---------------------------")
+
+        print(instance_dict)
+        print(baseline_dict)
+        print("---------------------------")
+
+        if show_list is not None and index + 1 not in show_list:
+            continue
 
         Gaps.append((instance_dict["Final"][0] - baseline_dict["Final"][0]) * 100 / baseline_dict["Final"][0])
-        if (instance_dict["Final"][0] - baseline_dict["Final"][0]) * 100 / baseline_dict["Final"][0] > 20:
-            skip = True
         method_run_times.append(instance_dict["Final"][1])
         method_CG_iters.append(len(instance_dict) * 10)
         baseline_CG_iters.append(len(baseline_dict) * 10)
         method_PP_time.append(instance_dict["Final"][1] * 0.9 / (len(instance_dict) * 10))
         baseline_PP_time.append((baseline_dict["Final"][1] * 0.9 / (len(baseline_dict) * 10)))
+        method_catch_up = 0
         for key in instance_dict:
             time = instance_dict[key][1]
+            if instance_dict["Final"][0] < baseline_dict["Final"][0] and instance_dict[key][0] > baseline_dict['Final'][0]\
+                    and time > method_catch_up:
+                method_catch_up = time
             obj_gap = (instance_dict[key][0] - baseline_dict["Final"][0]) * 100 / baseline_dict["Final"][0]
             for key2 in time_obj_map:
                 if time < key2:
@@ -77,17 +82,18 @@ def result_analyzer(method, base, num_customers, addition=None, switch=False):
                 break
 
         if stoppage is None:
-            if baseline_dict['Final'][0] <= algo_final and not skip:
-                stoppage = baseline_dict['Final'][1]
+            stoppage = baseline_dict['Final'][1]
+            if baseline_dict['Final'][0] <= algo_final:
                 DP_catch_up.append(stoppage / instance_dict['Final'][1])
-                print((Gaps[index], stoppage / instance_dict['Final'][1]))
+                # print((Gaps[index], stoppage / instance_dict['Final'][1]))
             else:
                 unmatched += 1
+                assert method_catch_up != 0
+                DP_catch_up.append(stoppage / method_catch_up)
                 continue
         else:
-            if not skip:
-                DP_catch_up.append(stoppage / instance_dict['Final'][1])
-                print((Gaps[index], stoppage / instance_dict['Final'][1]))
+            DP_catch_up.append(stoppage / instance_dict['Final'][1])
+            # print((Gaps[index], stoppage / instance_dict['Final'][1]))
 
     CI = {}
     x = []
@@ -114,7 +120,6 @@ def result_analyzer(method, base, num_customers, addition=None, switch=False):
         print("already deleted")
 
     print("Unmatched objectives: " + str(unmatched))
-    print(len(DP_catch_up))
     print("Average final objective gap is: " + str(statistics.mean(Gaps)))
     print("Avg Nr of CG iterations for method: " + str(statistics.mean(method_CG_iters)))
     print("Avg Nr of CG iterations for baseline: " + str(statistics.mean(baseline_CG_iters)))
@@ -133,16 +138,20 @@ def result_analyzer(method, base, num_customers, addition=None, switch=False):
     pp.fill_between(x, CI_low, CI_up, color='b', alpha=.1)
     pp.xlabel("Time (s)")
     pp.ylabel("Objective Gap (%)")
-    pp.title("Convergence plot")
-    pp.show()
+    #pp.title("Convergence plot")
+    #pp.show()
 
     pp.hist(Gaps)
-    pp.title("Objective Gaps Histogram")
-    pp.show()
+    #pp.title("Objective Gaps Histogram")
+    pp.xlabel("Objective Gaps")
+    pp.ylabel("Frequency")
+    #pp.show()
 
     pp.hist(DP_catch_up)
-    pp.title("Time Gaps Histogram")
-    pp.show()
+    #pp.title("Time Speed-up Histogram")
+    pp.xlabel("Time Speed-up factor")
+    pp.ylabel("Frequency")
+    #pp.show()
 
 
 def create_price(time_matrix, duals):
@@ -153,6 +162,12 @@ def create_price(time_matrix, duals):
     prices = (time_matrix - duals) * -1
     numpy.fill_diagonal(prices, 0)
     return prices
+
+
+def sample_prefs(m, n):
+    x = numpy.random.random((n, m))
+    row_sums = x.sum(axis=1, keepdims=True)
+    return x / row_sums
 
 
 def calculate_compatibility(time_windows, travel_times, service_times):
@@ -243,6 +258,24 @@ def remap_route(route, cus_mapping):
     for x in range(1, len(route) - 1):
         route[x] = cus_mapping[route[x]]
     return route
+
+
+def scaled(matrix):
+    max_val = numpy.max(matrix)
+    min_val = numpy.min(matrix)
+    return (matrix - min_val) / (max_val - min_val)
+
+
+def calculate_mo_function(prefs, *args):
+    pref_shape = prefs.shape
+    batch_size = pref_shape[0]
+    num_obj = pref_shape[1]
+    num_customers = len(args[0])
+    objectives = numpy.zeros((batch_size, num_customers, num_customers))
+    for x in range(batch_size):
+        for k in range(num_obj):
+            objectives[x] += prefs[x, k] * args[k]
+    return objectives
 
 
 def initialize_columns(num_customers, truck_capacity, time_matrix, service_times, time_windows, demands):
@@ -337,13 +370,14 @@ def check_route_feasibility(route, time_matrix, time_windows, service_times, dem
 
 
 def main():
-    method = 'K-Opt'
-    num_customers = 1000
-    addition = "ULGR 10 Large Scale Instances"
-    baseline = 'True Large Scale Instances'
-    switch = True
+    method = 'RL'
+    num_customers = 100
+    addition = "New Instances"
+    baseline = 'True'
+    switch = False
+    show_list = None
 
-    result_analyzer(method, baseline, num_customers, addition, switch)
+    result_analyzer(method, baseline, num_customers, addition, switch, show_list)
 
 
 if __name__ == "__main__":

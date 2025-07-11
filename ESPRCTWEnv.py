@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import torch
 import numpy
 
+
 @dataclass
 class Reset_State:
     depot_xy: torch.Tensor = None
@@ -125,7 +126,6 @@ class ESPRCTWEnv:
         if solomon:
             coords = coords / 100
 
-        coords = coords
         demands = demands / vehicle_capacity
         max_time = numpy.max(time_windows)
         duals = duals / max_time

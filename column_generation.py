@@ -462,7 +462,7 @@ class Subproblem:
         current_time += self.service_times[start_point]
 
         inc = math.ceil(self.no_of_increments - (self.time_windows[0, 1] - current_time) / self.increment)
-        if 0 < inc <= self.no_of_increments:
+        if 0 <= inc <= self.no_of_increments:
             if label_map is None:
                 label_map = {}
             label_map[start_point] = (inc, current_price)
@@ -509,7 +509,6 @@ class Subproblem:
 
                     if roll_back_price <= CP and roll_back_time <= max(self.time_windows[j, 0], CT):
                         continue
-
                 label, lower_bound, terminate = self.DP_heuristic(j, copy_label, RC, CT, CP,
                                                                   start_time, thread_time_limit,
                                                                   price_lb, label_map.copy())
@@ -524,19 +523,18 @@ class Subproblem:
         return best_label, best_bound, terminate
 
     def k_exchange(self, path, dist):
+        dist_sum = sum([torch.sum(dist[node, :]) for node in path if node != 0])
+        if dist_sum == 0:
+            return [[]]
+
         path_length = len(path)
-        new_path_list = []
         try:
             index = int(torch.randint(1, path_length - 1, ()))
         except:
             print("Infeasible Route Detected")
             print(path)
             sys.exit(0)
-
         chosen = path[index]
-        dist_sum = sum([torch.sum(dist[node, :]) for node in path if node != 0])
-        if dist_sum == 0:
-            return [[]]
         while torch.sum(dist[chosen]) == 0:
             index = int(torch.randint(1, path_length - 1, ()))
             chosen = path[index]
@@ -549,6 +547,7 @@ class Subproblem:
                 connect = j
                 break
 
+        new_path_list = []
         if connect is None:
             return [[]]
         elif connect not in path:
@@ -647,14 +646,18 @@ class Subproblem:
                 dist = torch.cumsum(dist, dim=1)
 
                 threads = []
-                best_costs = []
-                for label in best_routes:
-                    if label:
+                initial_costs = best_costs.copy()
+                initial_routes = best_routes.copy()
+                for index in range(len(initial_routes)):
+                    label = initial_routes[index]
+                    cost = initial_costs[index]
+                    if label and cost < 0.5 and index < 10:  ##############
                         thread = Bound_Threader(target=self.h_ls, args=(label, dist, k_opt_iter))
                         thread.start()
                         threads.append(thread)
 
                 best_routes = []
+                best_costs = []
                 for index, thread in enumerate(threads):
                     new_label, cost = thread.join()
                     best_routes.append(new_label)
@@ -739,7 +742,7 @@ def main():
     random.seed(10)
     np.random.seed(10)
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_customers', type=int, default=100)
+    parser.add_argument('--num_customers', type=int, default=50)
     parser.add_argument('--policy', type=str, default='DP')
     parser.add_argument('--AR', type=bool, default=True)
     args = parser.parse_args()
@@ -759,10 +762,10 @@ def main():
     red_costs = []
     # directory = config["Solomon Test Dataset"]
     # directory = config["G&H Dataset"]+str(num_customers)
-    #for instance in os.listdir(directory):
-    for experiment in range(5):
+    # for instance in os.listdir(directory):
+    for experiment in range(50):
         # file = directory + "/" + instance
-        #file = directory + "/" + "C206.txt"
+        # file = directory + "/" + "C206.txt"
         # print(file)
 
         VRP_instance = Instance_Generator(N=num_customers)

@@ -30,6 +30,13 @@ def generate_upper_bound(lb_sol, time_matrix, num_customers):
     for entry in fractional_routes:
         if len(customers_covered) < num_customers:
             route = entry[1]
+            route_copy = []
+            for node in route:
+                if node in customers_covered:
+                    continue
+                else:
+                    route_copy.append(node)
+            route = route_copy
             ub_sol.append(route)
             customers_covered += route[1:-1]
             customers_covered = list(set(customers_covered))

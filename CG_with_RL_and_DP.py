@@ -66,7 +66,7 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     max_iter = 5000
     max_time = 10 * 60
     cons_fail = 0
-    fail_tresh = 5
+    fail_tresh = 1
     iteration = 0
     cum_time = 0
     results_dict = {}
@@ -213,9 +213,9 @@ def main():
     directory = config["Solomon Test Dataset"]
     for instance in os.listdir(directory):
         # for experiment in range(50):
-        file = directory + "/" + instance
-        # file = directory + "/" + "C206.txt"
-        print(file)
+        # file = directory + "/" + instance
+        file = directory + "/" + "C206.txt"
+        # print(file)
 
         VRP_instance = Instance_Generator(file_path=file, config=config)
         # VRP_instance = Instance_Generator(N=num_customers)

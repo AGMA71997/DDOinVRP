@@ -1,5 +1,5 @@
 from instance_generator import Instance_Generator
-from column_generation import MasterProblem, Subproblem
+from column_generation import MasterProblem
 import time
 from utils import *
 
@@ -34,7 +34,7 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
         initial_routes, initial_costs, initial_orders = initialize_columns(num_customers, vehicle_capacity, time_matrix,
                                                                            service_times, time_windows,
                                                                            demands)
-        total_cost = sum(initial_costs[x] for x in range(len(initial_costs)))
+        total_cost = sum(initial_costs)
         print("The initial routes: " + str(initial_orders))
         print("with total cost: " + str(total_cost))
         for route in initial_orders:
@@ -46,8 +46,8 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
     compelled_edges = []
 
     # Initialize the master problem
-    master_problem = MasterProblem(num_customers, initial_routes, initial_costs, initial_orders, forbidden_edges,
-                                   compelled_edges)
+    master_problem = MasterProblem(num_customers, initial_routes, initial_costs, initial_orders,
+                                   forbidden_edges, compelled_edges)
 
     added_orders = initial_orders
 
@@ -124,7 +124,6 @@ def RL_solve_relaxed_vrp_with_time_windows(VRP_instance, forbidden_edges, compel
 
                 master_problem.add_columns([route], [cost], [ordered_route], forbidden_edges, compelled_edges)
                 added_orders.append(ordered_route)
-            # SEE code_blocks.py
         else:
             reoptimize = False
             # Optimality has been reached
@@ -149,12 +148,6 @@ class ESPRCTW_RL_solver(object):
         self.env = env
         self.model = model
         self.prices = prices
-
-    def train(self, steps):
-        pass
-
-    def evaluate(self):
-        pass
 
     def return_real_reward(self, decisions):
         real_rewards = torch.zeros((self.env.batch_size, self.env.pomo_size))
@@ -218,6 +211,8 @@ def main():
     path = args.model_path
     epoch = args.epoch
 
+    from branch_and_price import generate_upper_bound
+
     file = "config.json"
     with open(file, 'r') as f:
         config = json.load(f)
@@ -227,7 +222,7 @@ def main():
     red_costs = []
     # directory = config["Solomon Test Dataset"]
     # for instance in os.listdir(directory):
-    for experiment in range(50):
+    for experiment in range(5):
         # file = directory + "/" + instance
         # file = directory + "/" + "C206.txt"
         # print(file)
@@ -262,9 +257,12 @@ def main():
                                                                                                initial_costs,
                                                                                                initial_orders,
                                                                                                model_params,
-                                                                                               model_load, red_costs)
+                                                                                               model_load,
+                                                                                               red_costs)
 
-        print("solution: " + str(sol))
+        print(generate_upper_bound(sol, VRP_instance.time_matrix, num_customers)[1])
+
+        # print("solution: " + str(sol))
         print("objective: " + str(obj))
         print("number of columns: " + str(len(orders)))
 
@@ -280,9 +278,9 @@ def main():
     pickle.dump(performance_dicts, pickle_out)
     pickle_out.close()
 
-    # pp.hist(red_costs)
-    # pp.title("Reduced Cost Histogram for POMO-CG")
-    # pp.show()
+    '''pp.hist(red_costs)
+    pp.title("Reduced Cost Histogram for POMO-CG")
+    pp.show()'''
 
 
 if __name__ == "__main__":
