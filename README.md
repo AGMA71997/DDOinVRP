@@ -1,7 +1,7 @@
 # DDOinVRP
 
-#Introduction
-This directory is dedicated to implementing the second project of my PhD research on DDO applications in VRP. Specifically, we aim to make use of ML and CG to improve optimization of VRP variants, namely CVRP and/or VRPTW.
+# Introduction
+Implementing a column generation scheme to solve large variants of Capacitated Vehicle Routing Problem with Time Windows (CVRPTW)
 
 #Scripts
 To that end, we have the following modules:
