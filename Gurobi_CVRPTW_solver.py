@@ -9,7 +9,6 @@ import statistics
 import argparse
 import gurobipy as gp
 from gurobipy import GRB
-from itertools import combinations
 
 
 def solve_exact(VRP_instance):
@@ -20,9 +19,9 @@ def solve_exact(VRP_instance):
     vehicle_capacity = VRP_instance.vehicle_capacity
     service_times = VRP_instance.service_times
     num_customers = VRP_instance.N
+    print(demands[:10])
 
     nodes = range(num_customers + 1)
-    print({i: demands[i] for i in nodes})
     customers = range(1, num_customers + 1)
 
     model = gp.Model("CVRPTW_LP")
@@ -78,61 +77,9 @@ def solve_exact(VRP_instance):
     model.update()
     model.optimize()
 
-    x_sol = {(i, j): round(x[i, j].X, 2) for i in nodes for j in nodes if i != j and x[i, j].X > 0.0001}
-    u_sol = {i: u[i].x for i in nodes}
-    '''print(x_sol)
-    print(u_sol)
-    print(model.objval)
-    subtourelim(model, x_sol, x)'''
-
-    # Extract results
-    counter = 0
-    while True:
-        x_sol = {(i, j): round(x[i, j].X, 2) for i in nodes for j in nodes if i != j and x[i, j].X > 0.0001}
-        if subtourelim(model, x_sol, x):
-            model.optimize()
-            counter += 1
-        else:
-            break
-        if counter % 10 == 0:
-            # print(x_sol)
-            print("Round: " + str(counter))
-            print(model.objval)
-            print("----------------")
+    x_sol = {(i, j): round(x[i, j].X, 2) for i in nodes for j in nodes if i != j and x[i, j].X > 0.01}
 
     return x_sol, model.ObjVal
-
-
-def subtourelim(model, solution, X):
-    # make a list of edges selected in the solution
-    unvisited = list(set([edge[0] for edge in solution] + [edge[1] for edge in solution]))
-    unvisited.append(0)
-    # find the shortest cycle in the selected edge list
-    tour = subtour(solution, unvisited)
-    if len(tour) > 0:
-        # add subtour elimination constr. for every pair of cities in tour
-        model.addConstr(gp.quicksum(X[i, j] for (i, j) in solution if j in tour) <= 0.95)
-        model.update()
-        # model.reset()
-        return True
-    return False
-
-
-# Given a tuplelist of edges, find the shortest subtour
-def subtour(edges, unvisited):
-    cycle = range(len(unvisited) + 1)  # initial length has 1 more city
-    while unvisited:  # true if list is non-empty
-        thiscycle = []
-        neighbors = unvisited
-        while neighbors:
-            current = neighbors[0]
-            thiscycle.append(current)
-            unvisited.remove(current)
-            neighbors = [j for i, j in edges if i == current and j in unvisited]
-        if len(cycle) > len(thiscycle):
-            cycle = thiscycle
-    print(cycle)
-    return cycle
 
 
 def main():
@@ -140,7 +87,7 @@ def main():
     np.random.seed(10)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_customers', type=int, default=100)
+    parser.add_argument('--num_customers', type=int, default=200)
     args = parser.parse_args()
     num_customers = args.num_customers
 
@@ -152,10 +99,10 @@ def main():
     results = []
     for experiment in range(1):
         VRP_instance = Instance_Generator(N=num_customers)
-        orders, obj = solve_exact(VRP_instance)
+        _, obj = solve_exact(VRP_instance)
 
         print("objective: " + str(obj))
-        print("number of columns: " + str(len(orders)))
+        #print("number of columns: " + str(len(orders)))
 
         results.append(obj)
 
